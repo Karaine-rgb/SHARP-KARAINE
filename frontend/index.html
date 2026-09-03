@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sharp Karaine — Megajackpot Sharp Money Tracker</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>SHARP KARAINE <span class="dim">// megajackpot sharp money tracker</span></h1>
+    <div class="topbar-actions">
+      <span id="ws-status" class="pill pill-dim">connecting…</span>
+      <button id="btn-force-all" class="btn">Force Poll All</button>
+      <button id="btn-discovery" class="btn">Discovery</button>
+      <button id="btn-settings" class="btn">Settings</button>
+    </div>
+  </header>
+
+  <main>
+    <table id="summary-table">
+      <thead>
+        <tr>
+          <th>Kickoff</th>
+          <th>Match</th>
+          <th>League</th>
+          <th>Tier</th>
+          <th>Sharp Side</th>
+          <th>Score</th>
+          <th>1X2 Δ (pp)</th>
+          <th>1X2 Limit Δ</th>
+          <th>AH Line (open → now)</th>
+          <th>AH Δ (pp)</th>
+          <th>AH Limit Δ</th>
+        </tr>
+      </thead>
+      <tbody id="summary-body">
+        <tr><td colspan="11" class="dim">Loading…</td></tr>
+      </tbody>
+    </table>
+  </main>
+
+  <!-- Settings modal -->
+  <div id="modal-settings" class="modal hidden">
+    <div class="modal-card">
+      <h2>Settings</h2>
+      <label>Arcadia API key <input id="in-arcadia-key" type="text" placeholder="unchanged" /></label>
+      <label>Telegram bot token <input id="in-tg-token" type="text" placeholder="unchanged" /></label>
+      <label>Telegram chat id <input id="in-tg-chat" type="text" placeholder="unchanged" /></label>
+      <div id="settings-current" class="dim small"></div>
+      <div class="modal-actions">
+        <button class="btn" id="btn-settings-save">Save</button>
+        <button class="btn btn-ghost" id="btn-settings-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Discovery modal -->
+  <div id="modal-discovery" class="modal hidden">
+    <div class="modal-card modal-wide">
+      <h2>Discover Megajackpot Matches</h2>
+      <label>League ID(s), comma-separated <input id="in-league-ids" type="text" placeholder="e.g. 1980, 2436" /></label>
+      <label>MJP round label <input id="in-round-label" type="text" placeholder="e.g. MJP Weekend 2026-09-06" /></label>
+      <button class="btn" id="btn-fetch-leagues">Fetch matches</button>
+      <div id="discovery-results"></div>
+      <div class="modal-actions">
+        <button class="btn" id="btn-add-selected">Add selected to monitoring</button>
+        <button class="btn btn-ghost" id="btn-discovery-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Drill-down panel -->
+  <div id="drilldown" class="drilldown hidden">
+    <div class="drilldown-header">
+      <h2 id="dd-title">Match</h2>
+      <div>
+        <button class="btn" id="dd-force-poll">Force Poll</button>
+        <button class="btn" id="dd-unmonitor">Remove from monitoring</button>
+        <button class="btn btn-ghost" id="dd-close">Close ✕</button>
+      </div>
+    </div>
+
+    <section id="dd-cards" class="cards"></section>
+
+    <section class="raw-data">
+      <h3>Raw data study (independent of the signal engine)</h3>
+      <p class="dim small">
+        Every collected series, unfiltered. Use this to form your own read before trusting the tier above.
+      </p>
+      <div class="chart-grid">
+        <div class="chart-block"><h4>1X2 fair probability (%)</h4><div id="chart-1x2-prob" class="chart"></div></div>
+        <div class="chart-block"><h4>1X2 decimal odds</h4><div id="chart-1x2-odds" class="chart"></div></div>
+        <div class="chart-block"><h4>1X2 market limit</h4><div id="chart-1x2-limit" class="chart"></div></div>
+        <div class="chart-block"><h4>AH line (home points)</h4><div id="chart-ah-line" class="chart"></div></div>
+        <div class="chart-block"><h4>AH fair probability (%)</h4><div id="chart-ah-prob" class="chart"></div></div>
+        <div class="chart-block"><h4>AH market limit</h4><div id="chart-ah-limit" class="chart"></div></div>
+        <div class="chart-block"><h4>Total goals line + odds</h4><div id="chart-total" class="chart"></div></div>
+        <div class="chart-block"><h4>Composite score over time</h4><div id="chart-score" class="chart"></div></div>
+      </div>
+    </section>
+
+    <section class="raw-table-section">
+      <h3>Raw snapshot table</h3>
+      <div class="raw-table-wrap">
+        <table id="raw-table">
+          <thead>
+            <tr>
+              <th>Captured</th><th>Market</th><th>Period</th><th>Alt</th><th>Status</th>
+              <th>Home</th><th>Draw</th><th>Away</th><th>Points</th><th>Limit</th>
+              <th>Fair H</th><th>Fair D</th><th>Fair A</th>
+            </tr>
+          </thead>
+          <tbody id="raw-table-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
