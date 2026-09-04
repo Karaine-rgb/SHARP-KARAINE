@@ -64,10 +64,16 @@ class ArcadiaClient:
             if resp.status_code == 200:
                 return resp.json()
             if resp.status_code == 401 or resp.status_code == 403:
+                server = resp.headers.get("server", "?")
+                ctype = resp.headers.get("content-type", "?")
+                snippet = resp.text[:200].replace("\n", " ")
                 raise ArcadiaAuthError(
-                    f"Arcadia auth rejected ({resp.status_code}) - the guest key "
-                    "likely rotated/expired, grab a fresh one from pinnacle.com "
-                    "network tab and update it in Settings."
+                    f"Arcadia auth rejected ({resp.status_code}) from server="
+                    f"{server!r} content-type={ctype!r}. This is either a "
+                    "rotated/expired guest key (update it in Settings) or an "
+                    "anti-bot block on requests that don't originate from a "
+                    "real pinnacle.com browser session - a challenge-page "
+                    f"body below points to the latter, not the key. Body: {snippet!r}"
                 )
             if resp.status_code == 429:
                 if attempt > max_retries:
