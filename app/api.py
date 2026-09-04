@@ -58,6 +58,20 @@ async def discover_league_matchups(league_id: int):
     return matchups
 
 
+@router.get("/debug/markets/{matchup_id}")
+async def debug_raw_markets(matchup_id: int):
+    """Raw passthrough of the markets endpoint, for diagnosing schema
+    mismatches against a live response - not used by the frontend.
+    """
+    client = ArcadiaClient(api_key=await get_arcadia_api_key())
+    try:
+        return await client.get_matchup_markets(matchup_id)
+    except ArcadiaError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    finally:
+        await client.aclose()
+
+
 class MatchToTrack(BaseModel):
     pinnacle_matchup_id: int
     home_team: str
