@@ -149,6 +149,10 @@ tbody tr:hover { background: var(--bg-elevated); }
 .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; }
 .chart-block h4 { font-size: 11px; color: var(--text-dim); margin: 0 0 6px 0; text-transform: uppercase; }
 .chart { height: 220px; border: 1px solid var(--border); border-radius: 4px; }
+.chart-note { margin: 0 0 8px 0; line-height: 1.4; }
+.chart-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; font-size: 11px; color: var(--text-dim); }
+.chart-legend .swatch { display: inline-flex; align-items: center; gap: 5px; }
+.chart-legend .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 
 .raw-table-wrap { max-height: 400px; overflow: auto; border: 1px solid var(--border); margin-top: 8px; }
 #raw-table { font-size: 11px; }

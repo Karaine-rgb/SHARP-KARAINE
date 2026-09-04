@@ -221,6 +221,17 @@ function lineOn(chart, data, color, opts = {}) {
   return series;
 }
 
+function setLegend(elId, entries) {
+  // entries: [{ color, label }, ...] - lightweight-charts has no built-in
+  // legend, so this just renders colored dots next to labels above the
+  // chart, in the same order/colors the series were plotted in.
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.innerHTML = entries
+    .map((e) => `<span class="swatch"><span class="dot" style="background:${e.color}"></span>${e.label}</span>`)
+    .join("");
+}
+
 function renderCards(detail) {
   const s = detail.latest_score;
   const sig = detail.latest_signals || {};
@@ -287,43 +298,73 @@ function renderRawTable(rows) {
     .join("");
 }
 
+const COLOR_HOME = "#39ff88";
+const COLOR_DRAW = "#ffd60a";
+const COLOR_AWAY = "#ff9500";
+const COLOR_LINE = "#bf5af2";
+
 function renderCharts(detail) {
   destroyCharts();
   const ml = detail.series.moneyline_main;
   const sp = detail.series.spread_main;
   const tot = detail.series.total_main;
+  const home = detail.matchup.home_team;
+  const away = detail.matchup.away_team;
 
   const c1 = makeChart("chart-1x2-prob");
-  lineOn(c1, toSeriesData(ml, "fair_home_prob").map((d) => ({ ...d, value: d.value * 100 })), "#39ff88");
-  lineOn(c1, toSeriesData(ml, "fair_draw_prob").map((d) => ({ ...d, value: d.value * 100 })), "#ffd60a");
-  lineOn(c1, toSeriesData(ml, "fair_away_prob").map((d) => ({ ...d, value: d.value * 100 })), "#ff9500");
+  lineOn(c1, toSeriesData(ml, "fair_home_prob").map((d) => ({ ...d, value: d.value * 100 })), COLOR_HOME);
+  lineOn(c1, toSeriesData(ml, "fair_draw_prob").map((d) => ({ ...d, value: d.value * 100 })), COLOR_DRAW);
+  lineOn(c1, toSeriesData(ml, "fair_away_prob").map((d) => ({ ...d, value: d.value * 100 })), COLOR_AWAY);
+  setLegend("legend-1x2-prob", [
+    { color: COLOR_HOME, label: `${home} (Home)` },
+    { color: COLOR_DRAW, label: "Draw" },
+    { color: COLOR_AWAY, label: `${away} (Away)` },
+  ]);
 
   const c2 = makeChart("chart-1x2-odds");
-  lineOn(c2, toSeriesData(ml, "home_price"), "#39ff88");
-  lineOn(c2, toSeriesData(ml, "draw_price"), "#ffd60a");
-  lineOn(c2, toSeriesData(ml, "away_price"), "#ff9500");
+  lineOn(c2, toSeriesData(ml, "home_price"), COLOR_HOME);
+  lineOn(c2, toSeriesData(ml, "draw_price"), COLOR_DRAW);
+  lineOn(c2, toSeriesData(ml, "away_price"), COLOR_AWAY);
+  setLegend("legend-1x2-odds", [
+    { color: COLOR_HOME, label: `${home} (Home)` },
+    { color: COLOR_DRAW, label: "Draw" },
+    { color: COLOR_AWAY, label: `${away} (Away)` },
+  ]);
 
   const c3 = makeChart("chart-1x2-limit");
-  lineOn(c3, toSeriesData(ml, "limit_amount"), "#39ff88");
+  lineOn(c3, toSeriesData(ml, "limit_amount"), COLOR_HOME);
+  setLegend("legend-1x2-limit", [{ color: COLOR_HOME, label: "1X2 market limit ($)" }]);
 
   const c4 = makeChart("chart-ah-line");
-  lineOn(c4, toSeriesData(sp, "home_points"), "#bf5af2");
+  lineOn(c4, toSeriesData(sp, "home_points"), COLOR_LINE);
+  setLegend("legend-ah-line", [{ color: COLOR_LINE, label: `${home} handicap (points)` }]);
 
   const c5 = makeChart("chart-ah-prob");
-  lineOn(c5, toSeriesData(sp, "fair_home_prob").map((d) => ({ ...d, value: d.value * 100 })), "#39ff88");
-  lineOn(c5, toSeriesData(sp, "fair_away_prob").map((d) => ({ ...d, value: d.value * 100 })), "#ff9500");
+  lineOn(c5, toSeriesData(sp, "fair_home_prob").map((d) => ({ ...d, value: d.value * 100 })), COLOR_HOME);
+  lineOn(c5, toSeriesData(sp, "fair_away_prob").map((d) => ({ ...d, value: d.value * 100 })), COLOR_AWAY);
+  setLegend("legend-ah-prob", [
+    { color: COLOR_HOME, label: `${home} (Home)` },
+    { color: COLOR_AWAY, label: `${away} (Away)` },
+  ]);
 
   const c6 = makeChart("chart-ah-limit");
-  lineOn(c6, toSeriesData(sp, "limit_amount"), "#bf5af2");
+  lineOn(c6, toSeriesData(sp, "limit_amount"), COLOR_LINE);
+  setLegend("legend-ah-limit", [{ color: COLOR_LINE, label: "AH market limit ($)" }]);
 
   const c7 = makeChart("chart-total");
-  lineOn(c7, toSeriesData(tot, "home_points"), "#bf5af2", { priceScaleId: "left" });
+  lineOn(c7, toSeriesData(tot, "home_points"), COLOR_LINE, { priceScaleId: "left" });
   c7.priceScale("left").applyOptions({ visible: true });
-  lineOn(c7, toSeriesData(tot, "home_price"), "#39ff88");
-  lineOn(c7, toSeriesData(tot, "away_price"), "#ff9500");
+  lineOn(c7, toSeriesData(tot, "home_price"), COLOR_HOME); // "home" slot = Over, see ingest.py normalize_market
+  lineOn(c7, toSeriesData(tot, "away_price"), COLOR_AWAY); // "away" slot = Under
+  setLegend("legend-total", [
+    { color: COLOR_LINE, label: "Goal total line (left axis)" },
+    { color: COLOR_HOME, label: "Over odds (right axis)" },
+    { color: COLOR_AWAY, label: "Under odds (right axis)" },
+  ]);
 
   const c8 = makeChart("chart-score");
-  lineOn(c8, toSeriesData(detail.score_history, "total_score", "computed_at"), "#39ff88");
+  lineOn(c8, toSeriesData(detail.score_history, "total_score", "computed_at"), COLOR_HOME);
+  setLegend("legend-score", [{ color: COLOR_HOME, label: "Composite score (0–10)" }]);
 }
 
 async function openDrilldown(matchupId) {

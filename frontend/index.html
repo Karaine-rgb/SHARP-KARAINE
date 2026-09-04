@@ -90,14 +90,19 @@
         Every collected series, unfiltered. Use this to form your own read before trusting the tier above.
       </p>
       <div class="chart-grid">
-        <div class="chart-block"><h4>1X2 fair probability (%)</h4><div id="chart-1x2-prob" class="chart"></div></div>
-        <div class="chart-block"><h4>1X2 decimal odds</h4><div id="chart-1x2-odds" class="chart"></div></div>
-        <div class="chart-block"><h4>1X2 market limit</h4><div id="chart-1x2-limit" class="chart"></div></div>
-        <div class="chart-block"><h4>AH line (home points)</h4><div id="chart-ah-line" class="chart"></div></div>
-        <div class="chart-block"><h4>AH fair probability (%)</h4><div id="chart-ah-prob" class="chart"></div></div>
-        <div class="chart-block"><h4>AH market limit</h4><div id="chart-ah-limit" class="chart"></div></div>
-        <div class="chart-block"><h4>Total goals line + odds</h4><div id="chart-total" class="chart"></div></div>
-        <div class="chart-block"><h4>Composite score over time</h4><div id="chart-score" class="chart"></div></div>
+        <div class="chart-block"><h4>1X2 fair probability (%)</h4><div class="chart-legend" id="legend-1x2-prob"></div><div id="chart-1x2-prob" class="chart"></div></div>
+        <div class="chart-block"><h4>1X2 decimal odds</h4><div class="chart-legend" id="legend-1x2-odds"></div><div id="chart-1x2-odds" class="chart"></div></div>
+        <div class="chart-block"><h4>1X2 market limit</h4><div class="chart-legend" id="legend-1x2-limit"></div><div id="chart-1x2-limit" class="chart"></div></div>
+        <div class="chart-block"><h4>AH line (home points)</h4><div class="chart-legend" id="legend-ah-line"></div><div id="chart-ah-line" class="chart"></div></div>
+        <div class="chart-block"><h4>AH fair probability (%)</h4><div class="chart-legend" id="legend-ah-prob"></div><div id="chart-ah-prob" class="chart"></div></div>
+        <div class="chart-block"><h4>AH market limit</h4><div class="chart-legend" id="legend-ah-limit"></div><div id="chart-ah-limit" class="chart"></div></div>
+        <div class="chart-block">
+          <h4>Total goals: line + Over/Under odds</h4>
+          <p class="dim small chart-note">Purple (left axis) is the goal-total line itself (e.g. 2.5 → 3.0) — a structural shift, not just a price move. Green/orange (right axis) are the Over/Under decimal odds. Line + Over moving together = sharp money expects more goals; line steady with odds drifting alone is more likely routine.</p>
+          <div class="chart-legend" id="legend-total"></div>
+          <div id="chart-total" class="chart"></div>
+        </div>
+        <div class="chart-block"><h4>Composite score over time</h4><div class="chart-legend" id="legend-score"></div><div id="chart-score" class="chart"></div></div>
       </div>
     </section>
 
