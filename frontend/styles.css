@@ -97,6 +97,11 @@ tbody tr:hover { background: var(--bg-elevated); }
 .tier-contested { background: var(--tier-contested); color: #1a001a; }
 .tier-no_signal, .tier-insufficient_data { background: var(--tier-none); color: #0a0d0a; }
 
+.countdown { font-variant-numeric: tabular-nums; }
+.countdown-urgent { color: var(--tier-sharp); font-weight: bold; }
+.countdown-live { color: var(--tier-strong); font-weight: bold; }
+#dd-countdown { font-size: 12px; margin-top: 2px; }
+
 .modal {
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.7);
@@ -150,6 +155,15 @@ tbody tr:hover { background: var(--bg-elevated); }
 .chart-block h4 { font-size: 11px; color: var(--text-dim); margin: 0 0 6px 0; text-transform: uppercase; }
 .chart { height: 220px; border: 1px solid var(--border); border-radius: 4px; }
 .chart-note { margin: 0 0 8px 0; line-height: 1.4; }
+.chart-lib-warning {
+  background: rgba(255, 149, 0, 0.1);
+  border: 1px solid var(--tier-sharp);
+  color: var(--tier-sharp);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
 .chart-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; font-size: 11px; color: var(--text-dim); }
 .chart-legend .swatch { display: inline-flex; align-items: center; gap: 5px; }
 .chart-legend .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }

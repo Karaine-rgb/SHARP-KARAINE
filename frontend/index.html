@@ -23,6 +23,7 @@
       <thead>
         <tr>
           <th>Kickoff</th>
+          <th>Kicks Off In</th>
           <th>Match</th>
           <th>League</th>
           <th>Tier</th>
@@ -74,7 +75,10 @@
   <!-- Drill-down panel -->
   <div id="drilldown" class="drilldown hidden">
     <div class="drilldown-header">
-      <h2 id="dd-title">Match</h2>
+      <div>
+        <h2 id="dd-title">Match</h2>
+        <div id="dd-countdown" class="countdown dim"></div>
+      </div>
       <div>
         <button class="btn" id="dd-force-poll">Force Poll</button>
         <button class="btn" id="dd-unmonitor">Remove from monitoring</button>
@@ -89,6 +93,7 @@
       <p class="dim small">
         Every collected series, unfiltered. Use this to form your own read before trusting the tier above.
       </p>
+      <div id="chart-lib-warning" class="chart-lib-warning hidden"></div>
       <div class="chart-grid">
         <div class="chart-block"><h4>1X2 fair probability (%)</h4><div class="chart-legend" id="legend-1x2-prob"></div><div id="chart-1x2-prob" class="chart"></div></div>
         <div class="chart-block"><h4>1X2 decimal odds</h4><div class="chart-legend" id="legend-1x2-odds"></div><div id="chart-1x2-odds" class="chart"></div></div>

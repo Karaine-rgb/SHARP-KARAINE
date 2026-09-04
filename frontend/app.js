@@ -52,11 +52,36 @@ async function api(path, options) {
 // Summary table
 // ---------------------------------------------------------------------------
 
+function formatCountdown(startIso) {
+  const diffMs = new Date(startIso).getTime() - Date.now();
+  if (diffMs <= 0) return { text: "Kicked off", cls: "countdown-live" };
+  const totalSec = Math.floor(diffMs / 1000);
+  const days = Math.floor(totalSec / 86400);
+  const hours = Math.floor((totalSec % 86400) / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  const secs = totalSec % 60;
+  let text;
+  if (days > 0) text = `${days}d ${hours}h ${mins}m`;
+  else if (hours > 0) text = `${hours}h ${mins}m`;
+  else if (mins > 0) text = `${mins}m ${secs}s`;
+  else text = `${secs}s`;
+  const cls = totalSec <= 7200 ? "countdown-urgent" : "";
+  return { text, cls };
+}
+
+function tickCountdowns() {
+  document.querySelectorAll(".countdown[data-start]").forEach((el) => {
+    const { text, cls } = formatCountdown(el.dataset.start);
+    el.textContent = text;
+    el.className = `countdown ${cls}`;
+  });
+}
+
 async function loadSummary() {
   const rows = await api("/matches/summary");
   const body = document.getElementById("summary-body");
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="11" class="dim">No matches being monitored yet — use Discovery to add the Megajackpot fixtures.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="12" class="dim">No matches being monitored yet — use Discovery to add the Megajackpot fixtures.</td></tr>`;
     return;
   }
   body.innerHTML = rows
@@ -69,6 +94,7 @@ async function loadSummary() {
       return `
       <tr data-id="${r.id}">
         <td>${kickoff.toLocaleString()}</td>
+        <td class="countdown" data-start="${r.start_time}">—</td>
         <td>${r.home_team} vs ${r.away_team}</td>
         <td class="dim">${r.league_name || ""}</td>
         <td><span class="tier-badge tier-${tier}">${tier.replace("_", " ")}</span></td>
@@ -86,6 +112,7 @@ async function loadSummary() {
   body.querySelectorAll("tr[data-id]").forEach((tr) => {
     tr.addEventListener("click", () => openDrilldown(Number(tr.dataset.id)));
   });
+  tickCountdowns();
 }
 
 // ---------------------------------------------------------------------------
@@ -304,6 +331,14 @@ const COLOR_AWAY = "#ff9500";
 const COLOR_LINE = "#bf5af2";
 
 function renderCharts(detail) {
+  const warningEl = document.getElementById("chart-lib-warning");
+  if (typeof LightweightCharts === "undefined") {
+    warningEl.textContent =
+      "Chart library failed to load from unpkg.com (CDN blocked or unreachable) - charts can't render, but the raw snapshot table below still has all the data.";
+    warningEl.classList.remove("hidden");
+    return;
+  }
+  warningEl.classList.add("hidden");
   destroyCharts();
   const ml = detail.series.moneyline_main;
   const sp = detail.series.spread_main;
@@ -371,6 +406,9 @@ async function openDrilldown(matchupId) {
   currentDrilldownId = matchupId;
   const detail = await api(`/matches/${matchupId}/detail`);
   document.getElementById("dd-title").textContent = `${detail.matchup.home_team} vs ${detail.matchup.away_team}`;
+  const ddCountdown = document.getElementById("dd-countdown");
+  ddCountdown.dataset.start = detail.matchup.start_time;
+  tickCountdowns();
   renderCards(detail);
   renderRawTable(detail.raw_snapshots);
   document.getElementById("drilldown").classList.remove("hidden");
@@ -427,3 +465,4 @@ function connectWs() {
 loadSummary();
 connectWs();
 setInterval(loadSummary, 30000);
+setInterval(tickCountdowns, 1000);
