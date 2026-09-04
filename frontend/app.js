@@ -137,16 +137,29 @@ document.getElementById("btn-fetch-leagues").onclick = async () => {
   try {
     for (const leagueId of ids) {
       const matches = await api(`/leagues/${leagueId}/matchups`);
+      // The Arcadia /matchups list mixes real fixtures with their "special"
+      // sub-markets (Draw No Bet, team props, etc.) - every special repeats
+      // the same `parent` object holding the actual match. Resolve through
+      // `.parent` (falling back to the entry itself when there's no parent,
+      // i.e. this entry already IS the main fixture) and dedupe by that
+      // resolved id, since many specials otherwise repeat the same match.
+      const seen = new Map();
       for (const m of matches) {
-        discoveredMatches.push({
-          pinnacle_matchup_id: m.matchup_id ?? m.id,
-          home_team: m.home_team ?? m.home,
-          away_team: m.away_team ?? m.away,
-          start_time: m.startTime ?? m.start_time,
-          league_id: Number(leagueId),
-          league_name: m.league ?? m.league_name ?? "",
+        const main = m.parent || m;
+        const participants = main.participants || [];
+        const home = participants.find((p) => p.alignment === "home");
+        const away = participants.find((p) => p.alignment === "away");
+        if (!home || !away || seen.has(main.id)) continue;
+        seen.set(main.id, {
+          pinnacle_matchup_id: main.id,
+          home_team: home.name,
+          away_team: away.name,
+          start_time: main.startTime,
+          league_id: m.league?.id ?? Number(leagueId),
+          league_name: m.league?.name ?? "",
         });
       }
+      discoveredMatches.push(...seen.values());
     }
     container.innerHTML = discoveredMatches
       .map(

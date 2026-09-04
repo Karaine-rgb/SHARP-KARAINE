@@ -86,10 +86,15 @@ class ArcadiaClient:
     async def get_league_matchups(self, league_id: int) -> list[dict]:
         """GET /leagues/{league_id}/matchups
 
-        Expected shape per item: matchup_id, home_team, away_team,
-        startTime, league name. Unverified live - confirm field names
-        against a real response and adjust the parsing in ingest.py if
-        they differ.
+        Verified against a live response (2026-09). Returns a flat list
+        mixing real fixtures with their "special" sub-markets (Draw No
+        Bet, team props, etc.) - every special for a fixture repeats the
+        same `parent` object holding the actual match info. Consumers
+        must resolve through `entry.parent or entry` and dedupe by that
+        resolved id; team names are at `<resolved>.participants[]` as
+        `{alignment: "home"|"away", name}`, kickoff at
+        `<resolved>.startTime`, league at `entry.league.{id,name}`. See
+        the dedup/resolve logic in frontend/app.js's discovery handler.
         """
         data = await self._get(f"/leagues/{league_id}/matchups")
         if isinstance(data, dict):

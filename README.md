@@ -7,12 +7,18 @@ serves a live dashboard + Telegram alerts.
 
 ## Before you trust any of this
 
-- **This has not been run against the live Arcadia API from the
-  environment that built it.** The Pinnacle client (`app/pinnacle_client.py`)
-  and the field mapping in `app/ingest.py` follow the schema you supplied
-  from a prior working build, but that could not be verified live here
-  (see below). Run the smoke test first and report back any field name or
-  shape mismatch you hit against the real API.
+- **The discovery endpoint (`/leagues/{id}/matchups`) has now been verified
+  against a live response** and fixed to match reality: it returns a flat
+  list mixing real fixtures with their "special" sub-markets (Draw No Bet,
+  team props, etc.), all repeating the same `parent` object for a given
+  fixture. `frontend/app.js` resolves through `.parent` and dedupes by that
+  id - see the comment there and in `app/pinnacle_client.py`.
+- **The markets endpoint (`/matchups/{id}/markets/related/straight`,
+  i.e. actual odds/limits) is still unverified live** - it follows the
+  schema you supplied from a prior working build, but that could not be
+  checked from the environment that built it (no network egress). Once you
+  add a match to monitoring and it polls for real, report back any field
+  name or shape mismatch in `app/ingest.py`'s normalization.
 - **The exact scoring numbers are this build's own calibration, not
   empirical.** The *qualitative* thresholds (0.25/0.5/1.0 AH points,
   0.30/0.80/1.80pp 1X2 displacement, 30%/50% limit drop) are from your
