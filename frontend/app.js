@@ -440,6 +440,16 @@ document.getElementById("btn-force-all").onclick = async () => {
   await Promise.all(rows.map((r) => api(`/poll/force/${r.id}`, { method: "POST" })));
 };
 
+document.getElementById("btn-start-new-round").onclick = async () => {
+  const rows = await api("/matches/summary");
+  if (!rows.length) return;
+  if (!confirm(`Remove all ${rows.length} currently monitored matches from tracking? Their collected history is kept, just cleared from this view - use Discovery to add the new round.`)) {
+    return;
+  }
+  await Promise.all(rows.map((r) => api(`/matches/${r.id}?is_monitored=false`, { method: "PATCH" })));
+  loadSummary();
+};
+
 function connectWs() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${proto}://${location.host}${API}/ws`);
@@ -458,6 +468,11 @@ function connectWs() {
     if (msg.type === "match_update" || msg.type === "error") {
       loadSummary();
       if (currentDrilldownId === msg.matchup_id) openDrilldown(msg.matchup_id);
+    } else if (msg.type === "auto_unmonitored") {
+      loadSummary();
+      if (currentDrilldownId === msg.matchup_id) {
+        document.getElementById("dd-countdown").textContent = `Auto-removed from monitoring: ${msg.reason}`;
+      }
     }
   };
 }

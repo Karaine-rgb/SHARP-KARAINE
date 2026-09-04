@@ -41,6 +41,15 @@ class Settings:
     poll_jitter_min: float = float(_env("POLL_JITTER_MIN", "1.0"))
     poll_jitter_max: float = float(_env("POLL_JITTER_MAX", "3.5"))
 
+    # How long past scheduled kickoff to keep polling a match before
+    # auto-unmonitoring it. Generous on purpose (covers a delayed kickoff,
+    # full match, stoppage time) - this tool is for pre-match sharp-money
+    # detection, not live in-play tracking, so there's no value in
+    # continuing to poll indefinitely once a match has clearly finished.
+    # A postponed match that slips past this window just needs re-adding
+    # via Discovery (upsert on pinnacle_matchup_id re-enables it).
+    auto_expire_hours_after_kickoff: float = float(_env("AUTO_EXPIRE_HOURS_AFTER_KICKOFF", "6"))
+
     port: int = int(_env("PORT", "8000"))
 
 

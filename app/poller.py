@@ -80,8 +80,12 @@ class Poller:
             "from matchups where is_monitored = true"
         )
         now = datetime.now(timezone.utc)
+        expiry = timedelta(hours=settings.auto_expire_hours_after_kickoff)
         for row in rows:
             matchup_id = row["id"]
+            if now > row["start_time"] + expiry:
+                await self._auto_unmonitor(row, "past the auto-expiry window after kickoff")
+                continue
             state = self._states.setdefault(matchup_id, MatchState(settings.poll_base_interval))
             forced = matchup_id in self.force_poll_ids
             if not forced and now < state.next_due:
@@ -89,11 +93,27 @@ class Poller:
             self.force_poll_ids.discard(matchup_id)
             await self._poll_one(row, state, now)
 
+    async def _auto_unmonitor(self, row, reason: str) -> None:
+        matchup_id = row["id"]
+        await db.execute("update matchups set is_monitored = false where id = $1", matchup_id)
+        self._states.pop(matchup_id, None)
+        logger.info(
+            "Auto-unmonitored matchup %s (%s vs %s): %s",
+            matchup_id, row["home_team"], row["away_team"], reason,
+        )
+        await manager.broadcast({"type": "auto_unmonitored", "matchup_id": matchup_id, "reason": reason})
+
     async def _poll_one(self, row, state: MatchState, now: datetime) -> None:
         matchup_id = row["id"]
         jitter = random.uniform(settings.poll_jitter_min, settings.poll_jitter_max)
         try:
             raw_markets = await self._client.get_matchup_markets(row["pinnacle_matchup_id"])
+            if not raw_markets and now >= row["start_time"]:
+                # Pinnacle has pulled the match off the board entirely (fully
+                # settled) - no point waiting out the rest of the auto-expiry
+                # window polling a match with nothing left to poll.
+                await self._auto_unmonitor(row, "Pinnacle returned no markets (settled)")
+                return
             changed = await ingest.ingest_matchup_markets(matchup_id, raw_markets)
             result = await signals.compute_and_store_score(matchup_id, row["start_time"])
             await telegram.maybe_alert_tier_change(
