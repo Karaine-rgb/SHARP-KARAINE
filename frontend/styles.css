@@ -73,6 +73,12 @@ body {
 
 main { padding: 16px 20px; overflow-x: auto; }
 
+.round-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 12px; color: var(--text-dim); }
+.round-bar select {
+  background: var(--bg-elevated); color: var(--text); border: 1px solid var(--border);
+  padding: 4px 8px; font-family: var(--mono); font-size: 12px; border-radius: 3px; margin-left: 6px;
+}
+
 table { width: 100%; border-collapse: collapse; }
 th, td {
   text-align: left;

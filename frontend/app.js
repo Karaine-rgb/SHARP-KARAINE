@@ -1,6 +1,53 @@
 const API = "/api";
 let currentDrilldownId = null;
+let currentRound = null; // null = "live" (is_monitored=true), else a round_label
 let charts = [];
+
+// ---------------------------------------------------------------------------
+// Rounds
+// ---------------------------------------------------------------------------
+
+async function loadRounds(preferredLabel) {
+  const rounds = await api("/rounds");
+  const select = document.getElementById("round-select");
+  const previous = preferredLabel !== undefined ? preferredLabel : select.value;
+
+  select.innerHTML = rounds
+    .map((r) => {
+      const range = r.earliest_kickoff
+        ? new Date(r.earliest_kickoff).toLocaleDateString()
+        : "";
+      return `<option value="${r.round_label}">${r.round_label} — ${r.match_count} matches (${range})${r.is_active ? " ● live" : ""}</option>`;
+    })
+    .join("");
+
+  let target = previous;
+  if (!target || !rounds.some((r) => r.round_label === target)) {
+    const active = rounds.find((r) => r.is_active);
+    target = active ? active.round_label : rounds[0] ? rounds[0].round_label : null;
+  }
+  if (target) select.value = target;
+  currentRound = target;
+  updateRoundStatus(rounds);
+}
+
+function updateRoundStatus(rounds) {
+  const status = document.getElementById("round-status");
+  const r = rounds.find((x) => x.round_label === currentRound);
+  if (!r) {
+    status.textContent = "";
+    return;
+  }
+  status.textContent = r.is_active ? "● live — actively polling" : "○ archived — no longer polled";
+  status.className = r.is_active ? "pill pill-ok" : "pill pill-dim";
+}
+
+document.getElementById("round-select").onchange = async (e) => {
+  currentRound = e.target.value;
+  const rounds = await api("/rounds");
+  updateRoundStatus(rounds);
+  loadSummary();
+};
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -78,10 +125,11 @@ function tickCountdowns() {
 }
 
 async function loadSummary() {
-  const rows = await api("/matches/summary");
+  const qs = currentRound ? `?round_label=${encodeURIComponent(currentRound)}` : "";
+  const rows = await api(`/matches/summary${qs}`);
   const body = document.getElementById("summary-body");
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="12" class="dim">No matches being monitored yet — use Discovery to add the Megajackpot fixtures.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="12" class="dim">No matches in this round yet — use Discovery to add the Megajackpot fixtures.</td></tr>`;
     return;
   }
   body.innerHTML = rows
@@ -214,6 +262,7 @@ document.getElementById("btn-add-selected").onclick = async () => {
     body: JSON.stringify({ matches: checked, mjp_round_label }),
   });
   document.getElementById("modal-discovery").classList.add("hidden");
+  await loadRounds(mjp_round_label || "(unlabeled)");
   loadSummary();
 };
 
@@ -428,6 +477,7 @@ document.getElementById("dd-unmonitor").onclick = async () => {
   if (!currentDrilldownId) return;
   await api(`/matches/${currentDrilldownId}?is_monitored=false`, { method: "PATCH" });
   document.getElementById("dd-close").click();
+  await loadRounds(currentRound);
   loadSummary();
 };
 
@@ -441,12 +491,14 @@ document.getElementById("btn-force-all").onclick = async () => {
 };
 
 document.getElementById("btn-start-new-round").onclick = async () => {
-  const rows = await api("/matches/summary");
+  const rows = await api("/matches/summary"); // always the live set, regardless of viewed round
   if (!rows.length) return;
-  if (!confirm(`Remove all ${rows.length} currently monitored matches from tracking? Their collected history is kept, just cleared from this view - use Discovery to add the new round.`)) {
+  if (!confirm(`Stop tracking all ${rows.length} currently live matches? This round stays available in the Round dropdown to review - use Discovery to add the new round.`)) {
     return;
   }
+  const endedRound = currentRound;
   await Promise.all(rows.map((r) => api(`/matches/${r.id}?is_monitored=false`, { method: "PATCH" })));
+  await loadRounds(endedRound); // keep viewing the round just ended, now shown as archived
   loadSummary();
 };
 
@@ -469,7 +521,7 @@ function connectWs() {
       loadSummary();
       if (currentDrilldownId === msg.matchup_id) openDrilldown(msg.matchup_id);
     } else if (msg.type === "auto_unmonitored") {
-      loadSummary();
+      loadRounds(currentRound).then(loadSummary);
       if (currentDrilldownId === msg.matchup_id) {
         document.getElementById("dd-countdown").textContent = `Auto-removed from monitoring: ${msg.reason}`;
       }
@@ -477,7 +529,11 @@ function connectWs() {
   };
 }
 
-loadSummary();
-connectWs();
-setInterval(loadSummary, 30000);
-setInterval(tickCountdowns, 1000);
+async function init() {
+  await loadRounds();
+  await loadSummary();
+  connectWs();
+  setInterval(loadSummary, 30000);
+  setInterval(tickCountdowns, 1000);
+}
+init();

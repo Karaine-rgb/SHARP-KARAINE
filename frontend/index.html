@@ -20,6 +20,10 @@
   </header>
 
   <main>
+    <div class="round-bar">
+      <label>Round <select id="round-select"></select></label>
+      <span id="round-status" class="pill pill-dim"></span>
+    </div>
     <table id="summary-table">
       <thead>
         <tr>
@@ -63,7 +67,7 @@
     <div class="modal-card modal-wide">
       <h2>Discover Megajackpot Matches</h2>
       <label>League ID(s), comma-separated <input id="in-league-ids" type="text" placeholder="e.g. 1980, 2436" /></label>
-      <label>MJP round label <input id="in-round-label" type="text" placeholder="e.g. MJP Weekend 2026-09-06" /></label>
+      <label>MJP round label (used to group this round on the dashboard) <input id="in-round-label" type="text" placeholder="e.g. MJP September 2026 Week 1" /></label>
       <button class="btn" id="btn-fetch-leagues">Fetch matches</button>
       <div id="discovery-results"></div>
       <div class="modal-actions">

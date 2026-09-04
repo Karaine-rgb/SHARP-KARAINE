@@ -123,13 +123,48 @@ async def update_match_monitoring(matchup_id: int, is_monitored: bool):
 # Summary + detail
 # ---------------------------------------------------------------------------
 
-@router.get("/matches/summary")
-async def matches_summary():
+@router.get("/rounds")
+async def list_rounds():
+    """Every Megajackpot round ever tracked, most recent first, with
+    whether it's still actively being polled (is_active) - lets the
+    dashboard distinguish the live round from archived history rather
+    than matches just disappearing once auto-unmonitored.
+    """
     rows = await db.fetch(
         """
         select
+            coalesce(mjp_round_label, '(unlabeled)') as round_label,
+            count(*) as match_count,
+            min(start_time) as earliest_kickoff,
+            max(start_time) as latest_kickoff,
+            bool_or(is_monitored) as is_active
+        from matchups
+        group by coalesce(mjp_round_label, '(unlabeled)')
+        order by min(start_time) desc
+        """
+    )
+    return [dict(r) for r in rows]
+
+
+@router.get("/matches/summary")
+async def matches_summary(round_label: str | None = None):
+    """Without round_label: the actively-monitored (live) matches, same
+    as before. With round_label: every match in that round regardless of
+    is_monitored, so an archived/finished round stays fully viewable
+    instead of disappearing once auto-unmonitored.
+    """
+    if round_label is None:
+        condition, params = "m.is_monitored = true", []
+    elif round_label == "(unlabeled)":
+        condition, params = "m.mjp_round_label is null", []
+    else:
+        condition, params = "m.mjp_round_label = $1", [round_label]
+
+    rows = await db.fetch(
+        f"""
+        select
             m.id, m.pinnacle_matchup_id, m.home_team, m.away_team, m.league_name,
-            m.start_time, m.mjp_round_label,
+            m.start_time, m.mjp_round_label, m.is_monitored,
             s.tier, s.sharp_side, s.contested, s.total_score, s.ah_score, s.x2_score,
             s.limit_bonus, s.convergence_bonus, s.computed_at as score_computed_at,
             ah.detail_json as ah_detail,
@@ -152,9 +187,10 @@ async def matches_summary():
             select detail_json from signals sg where sg.matchup_id = m.id
             and sg.signal_type = 'limit_movement' order by computed_at desc limit 1
         ) lim on true
-        where m.is_monitored = true
+        where {condition}
         order by m.start_time asc
-        """
+        """,
+        *params,
     )
     result = []
     for r in rows:
