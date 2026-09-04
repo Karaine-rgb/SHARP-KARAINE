@@ -104,10 +104,19 @@ class ArcadiaClient:
     async def get_matchup_markets(self, matchup_id: int) -> list[dict]:
         """GET /matchups/{matchup_id}/markets/related/straight
 
-        Returns every market (moneyline/spread/total/team_total, main
-        period and first half, main and alternate lines) in one call.
+        Verified against a live response (2026-09) - and it does NOT
+        return only this matchup's markets. Despite the URL naming one
+        matchup, the response includes markets for many other unrelated
+        matchups too (that's the "related" in the endpoint name - nearby
+        matches on the same coupon), each carrying its own `matchupId`.
+        Some of those unrelated entries use a completely different price
+        shape (`participantId`-keyed, for markets with >2/3 outcomes) and
+        many omit `version` entirely. None of that is meaningful for the
+        match we actually asked about, so filter down to just it here -
+        everything downstream (ingest, signals) assumes it only ever sees
+        the requested matchup's own markets.
         """
         data = await self._get(f"/matchups/{matchup_id}/markets/related/straight")
         if isinstance(data, dict):
             data = data.get("markets", data.get("data", []))
-        return data or []
+        return [m for m in (data or []) if m.get("matchupId") == matchup_id]

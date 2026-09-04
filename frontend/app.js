@@ -269,6 +269,7 @@ function renderRawTable(rows) {
       (r) => `
       <tr>
         <td>${new Date(r.captured_at).toLocaleString()}</td>
+        <td class="dim">${r.market_key || ""}</td>
         <td>${r.market_type}</td>
         <td>${r.period}</td>
         <td>${r.is_alternate ? "alt" : "main"}</td>

@@ -1,13 +1,15 @@
 from app.ingest import add_fair_probs, diff_changed_markets, normalize_market, select_main_line
 
 
-def moneyline_market(version=1, home=-105, draw=240, away=260, status="open"):
+def moneyline_market(version=1, home=-105, draw=240, away=260, status="open", key="s;0;m"):
     return {
         "type": "moneyline",
         "period": 0,
         "isAlternate": False,
         "status": status,
         "version": version,
+        "key": key,
+        "matchupId": 111,
         "cutoffAt": "2026-09-06T15:00:00Z",
         "limits": [{"amount": 2500.0, "type": "maxRiskStake"}],
         "prices": [
@@ -18,13 +20,15 @@ def moneyline_market(version=1, home=-105, draw=240, away=260, status="open"):
     }
 
 
-def spread_market(version=1, home_points=-0.5, home_price=-110, away_price=-110, is_alt=False):
+def spread_market(version=1, home_points=-0.5, home_price=-110, away_price=-110, is_alt=False, key=None):
     return {
         "type": "spread",
         "period": 0,
         "isAlternate": is_alt,
         "status": "open",
         "version": version,
+        "key": key or f"s;0;s;{home_points}",
+        "matchupId": 111,
         "cutoffAt": "2026-09-06T15:00:00Z",
         "limits": [{"amount": 5000.0, "type": "maxRiskStake"}],
         "prices": [
@@ -84,7 +88,7 @@ def test_add_fair_probs_suspended_market_left_none():
 def test_diff_changed_markets_detects_new_and_changed():
     m1 = moneyline_market(version=1)
     m2 = spread_market(version=1)
-    last_versions = {("moneyline", 0, False): 1}  # spread not seen yet
+    last_versions = {"s;0;m": 1}  # spread not seen yet
     changed = diff_changed_markets([m1, m2], last_versions)
     assert len(changed) == 1
     assert changed[0]["type"] == "spread"
@@ -92,16 +96,36 @@ def test_diff_changed_markets_detects_new_and_changed():
 
 def test_diff_changed_markets_no_changes():
     m1 = moneyline_market(version=1)
-    last_versions = {("moneyline", 0, False): 1}
+    last_versions = {"s;0;m": 1}
     changed = diff_changed_markets([m1], last_versions)
     assert changed == []
 
 
 def test_diff_changed_markets_version_bump_is_change():
     m1 = moneyline_market(version=2)
-    last_versions = {("moneyline", 0, False): 1}
+    last_versions = {"s;0;m": 1}
     changed = diff_changed_markets([m1], last_versions)
     assert len(changed) == 1
+
+
+def test_diff_changed_markets_missing_version_always_changed():
+    m1 = moneyline_market()
+    del m1["version"]
+    last_versions = {"s;0;m": 999}  # even if "seen before", no version -> always changed
+    changed = diff_changed_markets([m1], last_versions)
+    assert len(changed) == 1
+
+
+def test_diff_changed_markets_distinguishes_simultaneous_alternate_lines():
+    # Real Pinnacle responses have many alternate spread lines sharing
+    # type=spread/period=0/isAlternate=true AND the same version number -
+    # only Pinnacle's own `key` tells them apart. Regression test for the
+    # bug where (market_type, period, is_alternate) collapsed them.
+    alt_a = spread_market(version=100, home_points=0.25, is_alt=True, key="s;0;s;0.25")
+    alt_b = spread_market(version=100, home_points=0.5, is_alt=True, key="s;0;s;0.5")
+    last_versions = {"s;0;s;0.25": 100}  # only alt_a seen before
+    changed = diff_changed_markets([alt_a, alt_b], last_versions)
+    assert [m["key"] for m in changed] == ["s;0;s;0.5"]
 
 
 def test_select_main_line_prefers_non_alternate_closest_to_zero():

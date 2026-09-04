@@ -1,11 +1,21 @@
 """Normalize raw Arcadia market payloads and diff them against what's
 already stored, so only genuinely changed market versions get written.
 
-Field names below (`limits[].amount` with `type == "maxRiskStake"`,
-`price.points`, `market.version`) follow the schema the user captured
-from a prior working build - see the module docstring in
-app/pinnacle_client.py for the caveat that this hasn't been exercised
-against a live response from this environment.
+Verified against a live response (2026-09). Two things the original spec
+got wrong, discovered from a real crash:
+
+1. `version` is NOT reliably present on every market object, and where it
+   IS present it is NOT per-line - Pinnacle bumps the same version number
+   across *every* market for a matchup when any one of them changes (a
+   single spread market can have 8+ simultaneous alternate lines all
+   sharing type=spread/period=0/isAlternate=true, and in a real response
+   they all shared one identical version value). Grouping by
+   (market_type, period, is_alternate) therefore collapses all of a
+   market's alternate lines onto one key, silently overwriting one
+   another. The real unique identity for a specific line is Pinnacle's
+   own `key` string (e.g. "s;0;s;1.25", "s;0;ou;3.5") - use that instead.
+2. Missing `version` is treated as "always changed" rather than crashing,
+   since we can't tell whether it changed without one.
 
 Functions are split into pure (no I/O, unit-testable) and DB-touching
 halves, marked below.
@@ -16,8 +26,6 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.odds import american_to_decimal, power_devig, implied_prob
-
-MarketKey = tuple[str, int, bool]  # (market_type, period, is_alternate)
 
 
 def _parse_iso(ts: str | None) -> datetime | None:
@@ -31,8 +39,16 @@ def _parse_iso(ts: str | None) -> datetime | None:
     return datetime.fromisoformat(ts.replace("Z", "+00:00"))
 
 
-def _market_key(market: dict) -> MarketKey:
-    return (market["type"], int(market.get("period", 0)), bool(market.get("isAlternate", False)))
+def _market_key(market: dict) -> str:
+    """The real per-line identity. Falls back to a constructed key in the
+    same style on the rare chance `key` is absent, so tracking degrades
+    gracefully instead of crashing - though every market seen from the
+    requested matchup itself has carried a `key`.
+    """
+    key = market.get("key")
+    if key:
+        return key
+    return f"{market['type']};{market.get('period', 0)};{market.get('isAlternate')};{market.get('matchupId')}"
 
 
 def _extract_limit_amount(market: dict) -> float | None:
@@ -90,12 +106,14 @@ def normalize_market(matchup_id: int, market: dict) -> dict:
             if home_points is None:
                 home_points = prices_by_designation["under"]["points"]
 
+    version = market.get("version")
     return {
         "matchup_id": matchup_id,
+        "market_key": _market_key(market),
         "market_type": market_type,
         "period": int(market.get("period", 0)),
         "is_alternate": bool(market.get("isAlternate", False)),
-        "version": int(market["version"]),
+        "version": int(version) if version is not None else None,
         "status": market.get("status"),
         "cutoff_at": _parse_iso(market.get("cutoffAt")),
         "home_price": home_price,
@@ -134,14 +152,18 @@ def add_fair_probs(snapshot: dict) -> dict:
 
 
 def diff_changed_markets(
-    raw_markets: list[dict], last_versions: dict[MarketKey, int]
+    raw_markets: list[dict], last_versions: dict[str, int | None]
 ) -> list[dict]:
-    """Return only markets whose version is new or has changed."""
+    """Return only markets whose version is new or has changed. A market
+    with no version at all is always treated as changed, since there's no
+    way to tell otherwise - better to over-persist a few extra rows than
+    silently drop a real line (or crash, as this used to).
+    """
     changed = []
     for market in raw_markets:
         key = _market_key(market)
-        version = int(market["version"])
-        if last_versions.get(key) != version:
+        version = market.get("version")
+        if version is None or last_versions.get(key) != version:
             changed.append(market)
     return changed
 
@@ -174,18 +196,17 @@ def select_main_line(normalized_markets: list[dict], market_type: str, period: i
 from app import db  # noqa: E402
 
 
-async def get_last_versions(matchup_id: int) -> dict[MarketKey, int]:
+async def get_last_versions(matchup_id: int) -> dict[str, int | None]:
     rows = await db.fetch(
         """
-        select distinct on (market_type, period, is_alternate)
-            market_type, period, is_alternate, version
+        select distinct on (market_key) market_key, version
         from market_snapshots
         where matchup_id = $1
-        order by market_type, period, is_alternate, captured_at desc
+        order by market_key, captured_at desc
         """,
         matchup_id,
     )
-    return {(r["market_type"], r["period"], r["is_alternate"]): r["version"] for r in rows}
+    return {r["market_key"]: r["version"] for r in rows}
 
 
 async def persist_snapshots(snapshots: list[dict]) -> None:
@@ -194,14 +215,15 @@ async def persist_snapshots(snapshots: list[dict]) -> None:
     await db.executemany(
         """
         insert into market_snapshots (
-            matchup_id, market_type, period, is_alternate, version, status,
+            matchup_id, market_key, market_type, period, is_alternate, version, status,
             cutoff_at, captured_at, raw_json, home_price, draw_price, away_price,
             home_points, limit_amount, fair_home_prob, fair_draw_prob, fair_away_prob
-        ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17)
+        ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13,$14,$15,$16,$17,$18)
         """,
         [
             (
                 s["matchup_id"],
+                s["market_key"],
                 s["market_type"],
                 s["period"],
                 s["is_alternate"],

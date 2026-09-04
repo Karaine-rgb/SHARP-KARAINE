@@ -197,7 +197,7 @@ async def match_detail(matchup_id: int):
     # returned for the raw table since it was collected too.
     all_snapshots = await db.fetch(
         """
-        select market_type, period, is_alternate, version, status, cutoff_at, captured_at,
+        select market_key, market_type, period, is_alternate, version, status, cutoff_at, captured_at,
                home_price, draw_price, away_price, home_points, limit_amount,
                fair_home_prob, fair_draw_prob, fair_away_prob
         from market_snapshots

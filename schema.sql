@@ -17,10 +17,14 @@ create table if not exists matchups (
 create table if not exists market_snapshots (
     id               bigserial primary key,
     matchup_id       bigint not null references matchups(id) on delete cascade,
+    market_key       text not null,       -- Pinnacle's own per-line id, e.g. "s;0;s;1.25" -
+                                           -- the real unique identity for a specific line;
+                                           -- (market_type, period, is_alternate) alone
+                                           -- collides across simultaneous alternate lines.
     market_type      text not null,       -- moneyline | spread | total | team_total
     period           int not null,        -- 0 = full match, 1 = first half
     is_alternate     boolean not null,
-    version          bigint not null,
+    version          bigint,              -- nullable: not every market carries one live
     status           text,                -- open | suspended
     cutoff_at        timestamptz,
     captured_at      timestamptz not null default now(),
@@ -38,9 +42,10 @@ create table if not exists market_snapshots (
 create index if not exists idx_snapshots_matchup_market
     on market_snapshots (matchup_id, market_type, period, is_alternate, captured_at);
 
--- Fast "last known version per market line" lookup for change detection.
-create index if not exists idx_snapshots_matchup_market_version
-    on market_snapshots (matchup_id, market_type, period, is_alternate, version desc);
+-- Fast "last known version per market line" lookup for change detection -
+-- market_key is the real per-line identity (see column comment above).
+create index if not exists idx_snapshots_matchup_key_version
+    on market_snapshots (matchup_id, market_key, captured_at desc);
 
 create table if not exists signals (
     id            bigserial primary key,
