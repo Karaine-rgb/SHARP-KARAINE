@@ -66,7 +66,18 @@
   <div id="modal-discovery" class="modal hidden">
     <div class="modal-card modal-wide">
       <h2>Discover Megajackpot Matches</h2>
-      <label>League ID(s), comma-separated <input id="in-league-ids" type="text" placeholder="e.g. 1980, 2436" /></label>
+
+      <div class="saved-leagues-header">
+        <span class="dim small">Leagues (tick the ones this round draws from)</span>
+        <button class="btn btn-ghost" id="btn-toggle-add-league">+ Add league</button>
+      </div>
+      <div id="add-league-form" class="add-league-form hidden">
+        <input id="in-new-league-id" type="text" placeholder="League ID (from pinnacle.com network tab)" />
+        <input id="in-new-league-name" type="text" placeholder="Name, e.g. Spain - La Liga" />
+        <button class="btn" id="btn-save-league">Save</button>
+      </div>
+      <div id="saved-leagues-list" class="saved-leagues-list"></div>
+
       <label>MJP round label (used to group this round on the dashboard) <input id="in-round-label" type="text" placeholder="e.g. MJP September 2026 Week 1" /></label>
       <button class="btn" id="btn-fetch-leagues">Fetch matches</button>
       <div id="discovery-results"></div>

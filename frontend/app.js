@@ -198,14 +198,70 @@ document.getElementById("btn-settings-save").onclick = async () => {
 
 let discoveredMatches = [];
 
-document.getElementById("btn-discovery").onclick = () =>
+document.getElementById("btn-discovery").onclick = () => {
   document.getElementById("modal-discovery").classList.remove("hidden");
+  loadSavedLeagues();
+};
 document.getElementById("btn-discovery-close").onclick = () =>
   document.getElementById("modal-discovery").classList.add("hidden");
 
+async function loadSavedLeagues(checkIds) {
+  const leagues = await api("/saved-leagues");
+  const list = document.getElementById("saved-leagues-list");
+  if (!leagues.length) {
+    list.innerHTML = `<div class="league-row dim">No leagues saved yet - use "+ Add league" below.</div>`;
+    return;
+  }
+  const toCheck = new Set(checkIds || []);
+  list.innerHTML = leagues
+    .map(
+      (l) => `
+      <div class="league-row">
+        <label>
+          <input type="checkbox" value="${l.league_id}" ${toCheck.has(l.league_id) ? "checked" : ""} />
+          ${l.league_name} <span class="dim">#${l.league_id}</span>
+        </label>
+        <button class="league-remove" data-id="${l.league_id}" title="Remove from saved list">✕</button>
+      </div>`
+    )
+    .join("");
+
+  list.querySelectorAll(".league-remove").forEach((btn) => {
+    btn.onclick = async () => {
+      await api(`/saved-leagues/${btn.dataset.id}`, { method: "DELETE" });
+      loadSavedLeagues();
+    };
+  });
+}
+
+document.getElementById("btn-toggle-add-league").onclick = () => {
+  document.getElementById("add-league-form").classList.toggle("hidden");
+};
+
+document.getElementById("btn-save-league").onclick = async () => {
+  const idInput = document.getElementById("in-new-league-id");
+  const nameInput = document.getElementById("in-new-league-name");
+  const league_id = Number(idInput.value.trim());
+  const league_name = nameInput.value.trim();
+  if (!league_id || !league_name) {
+    alert("Both a numeric league ID and a name are required.");
+    return;
+  }
+  await api("/saved-leagues", { method: "POST", body: JSON.stringify({ league_id, league_name }) });
+  idInput.value = "";
+  nameInput.value = "";
+  document.getElementById("add-league-form").classList.add("hidden");
+  await loadSavedLeagues([league_id]);
+};
+
 document.getElementById("btn-fetch-leagues").onclick = async () => {
-  const raw = document.getElementById("in-league-ids").value;
-  const ids = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  const ids = Array.from(document.querySelectorAll("#saved-leagues-list input[type=checkbox]:checked")).map(
+    (el) => el.value
+  );
+  if (!ids.length) {
+    document.getElementById("discovery-results").innerHTML = `<div class="dim">Tick at least one league above first.</div>`;
+    return;
+  }
   discoveredMatches = [];
   const container = document.getElementById("discovery-results");
   container.innerHTML = "Fetching…";

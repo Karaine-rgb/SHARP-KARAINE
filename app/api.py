@@ -43,6 +43,43 @@ async def update_settings(body: SettingsUpdate):
 
 
 # ---------------------------------------------------------------------------
+# Saved leagues (persisted so league IDs don't need to be re-found in the
+# browser's network tab every time - Pinnacle's UI doesn't expose them).
+# ---------------------------------------------------------------------------
+
+class SavedLeague(BaseModel):
+    league_id: int
+    league_name: str
+
+
+@router.get("/saved-leagues")
+async def list_saved_leagues():
+    rows = await db.fetch(
+        "select league_id, league_name, added_at from saved_leagues order by league_name asc"
+    )
+    return [dict(r) for r in rows]
+
+
+@router.post("/saved-leagues")
+async def add_saved_league(body: SavedLeague):
+    await db.execute(
+        """
+        insert into saved_leagues (league_id, league_name) values ($1, $2)
+        on conflict (league_id) do update set league_name = excluded.league_name
+        """,
+        body.league_id,
+        body.league_name,
+    )
+    return {"ok": True}
+
+
+@router.delete("/saved-leagues/{league_id}")
+async def delete_saved_league(league_id: int):
+    await db.execute("delete from saved_leagues where league_id = $1", league_id)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
 # Discovery
 # ---------------------------------------------------------------------------
 

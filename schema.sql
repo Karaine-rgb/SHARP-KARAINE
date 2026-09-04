@@ -85,3 +85,17 @@ create table if not exists app_settings (
     key    text primary key,
     value  text
 );
+
+create table if not exists saved_leagues (
+    league_id    bigint primary key,
+    league_name  text not null,
+    added_at     timestamptz not null default now()
+);
+
+-- Seed with the one league already confirmed working during development.
+-- Add more via the Discovery panel's "+ Add league" form - the Pinnacle
+-- league id isn't visible anywhere in the UI, only in the network tab on
+-- pinnacle.com (inspect a league's odds request URL).
+insert into saved_leagues (league_id, league_name) values
+    (1980, 'England - Premier League')
+on conflict (league_id) do nothing;

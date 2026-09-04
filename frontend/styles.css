@@ -16,6 +16,13 @@
 
 * { box-sizing: border-box; }
 
+/* Generic hide-toggle. Existing .modal.hidden/.drilldown.hidden rules
+   below are now redundant with this but harmless - kept as-is. Bug found
+   during testing: without this, any element toggled with plain
+   classList.add("hidden") (add-league-form, chart-lib-warning) stayed
+   fully visible since only those two compound selectors existed. */
+.hidden { display: none !important; }
+
 body {
   background: var(--bg);
   color: var(--text);
@@ -135,6 +142,23 @@ tbody tr:hover { background: var(--bg-elevated); }
 #discovery-results { max-height: 320px; overflow-y: auto; margin: 10px 0; border: 1px solid var(--border); }
 #discovery-results label { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--border); font-size: 12px; }
 #discovery-results input { width: auto; margin: 0; }
+
+.saved-leagues-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.saved-leagues-list {
+  max-height: 160px; overflow-y: auto; border: 1px solid var(--border); border-radius: 3px; margin-bottom: 12px;
+}
+.saved-leagues-list .league-row {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--border); font-size: 12px;
+}
+.saved-leagues-list .league-row:last-child { border-bottom: none; }
+.saved-leagues-list .league-row label { display: flex; align-items: center; gap: 8px; flex: 1; cursor: pointer; }
+.saved-leagues-list .league-row input[type="checkbox"] { width: auto; margin: 0; }
+.saved-leagues-list .league-remove {
+  background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 13px; padding: 0 4px;
+}
+.saved-leagues-list .league-remove:hover { color: var(--tier-strong); }
+.add-league-form { display: flex; gap: 8px; margin-bottom: 10px; }
+.add-league-form input { flex: 1; margin: 0; }
 
 .drilldown {
   position: fixed; inset: 0;
