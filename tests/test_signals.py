@@ -195,3 +195,21 @@ def test_compute_match_score_quiet_market_is_no_signal():
     result = compute_match_score(ml, sp, KICKOFF, now=KICKOFF - timedelta(hours=0.5))
     assert result["tier"] == "no_signal"
     assert result["sharp_side"] is None
+
+
+def test_compute_match_score_flat_line_uses_probability_fallback():
+    """A flat AH line used to always score 0 for ah_score, even if real
+    positioning was happening at that fixed number the whole time - the
+    exact blind spot found by backtesting 2 real MJP rounds (see the
+    comment above ah_prob in compute_match_score)."""
+    ml = [ml_point(48, 0.40, 0.30, 0.30), ml_point(1, 0.401, 0.2995, 0.2995)]  # 1X2 quiet
+    sp = [sp_point(48, -0.5, limit=5000.0), sp_point(1, -0.5, limit=5000.0)]  # line never moves
+    sp[0]["fair_home_prob"], sp[0]["fair_away_prob"] = 0.55, 0.45
+    sp[1]["fair_home_prob"], sp[1]["fair_away_prob"] = 0.58, 0.42  # +3pp home, well past strong
+
+    result = compute_match_score(ml, sp, KICKOFF, now=KICKOFF - timedelta(hours=0.5))
+    assert result["ah"]["direction"] is None  # the line itself never moved
+    assert result["ah"]["prob_fallback_used"] is True
+    assert result["ah_score"] == CONFIG["x2_score_strong"]
+    assert result["sharp_side"] == "home"
+    assert result["tier"] == "strong_sharp"

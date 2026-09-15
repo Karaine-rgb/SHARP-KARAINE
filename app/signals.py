@@ -228,7 +228,31 @@ def compute_match_score(
     sp_limit_drop = limit_drop_pct(spread_series)
     max_limit_drop = max(ml_limit_drop, sp_limit_drop)
 
-    ah_score = _score_ah(ah["magnitude"])
+    # Backtested against 2 real MJP rounds: every nonzero AH shift observed
+    # was exactly the same 0.25 points, yet the matching probability move on
+    # that same market ranged from 0.47pp to 9.73pp - raw points hide a real
+    # ~20x spread in how much the move actually meant. The safe fix is NOT
+    # to swap points for probability everywhere: once the line has actually
+    # stepped, the probability read is contaminated by the target changing
+    # underneath it (a harder/easier line mechanically moves the covering
+    # probability - see the "Reading the Tape" manual's chart 5 callout).
+    # So the probability-based read only ever substitutes in when the line
+    # itself hasn't moved - the case the tool currently scores as a flat
+    # zero even if real positioning was happening at that fixed line the
+    # whole time. x2_displacement() is reused as-is (rather than a new
+    # function) since it already degrades gracefully on a two-way market:
+    # fair_draw_prob is always None for spread rows, so the draw slot just
+    # stays 0.0. Its pp thresholds are reused too, for lack of any real
+    # calibration data yet for this specific flat-line case - same
+    # provisional-until-backtested status as every other number here.
+    ah_prob = x2_displacement(spread_series)
+    if ah["magnitude"] >= CONFIG["ah_shift_threshold"]:
+        ah_score = _score_ah(ah["magnitude"])
+        ah_effective_direction = ah["direction"]
+    else:
+        ah_score = _score_x2(ah_prob["magnitude"])
+        ah_effective_direction = ah_prob["direction"]
+
     x2_score = _score_x2(x2["magnitude"])
     limit_bonus = _score_limit(max_limit_drop)
 
@@ -246,15 +270,19 @@ def compute_match_score(
     contested = detect_contested(moneyline_series, kickoff)
 
     # Sharp side priority: AH shift first (sharps move AH first per the
-    # spec), then largest 1X2 displacement. A contested result keeps the
-    # most recent window's direction visible but flags the disagreement
-    # rather than picking a side with false confidence.
-    if ah["direction"]:
-        sharp_side = ah["direction"]
+    # spec), then largest 1X2 displacement. ah_effective_direction falls
+    # back to the flat-line probability read (see above) when the line
+    # itself hasn't moved, so early positioning at an unchanged number
+    # still gets to set the side instead of falling through to 1X2.
+    if ah_effective_direction:
+        sharp_side = ah_effective_direction
     elif x2["direction"]:
         sharp_side = x2["direction"]
     else:
         sharp_side = None
+
+    ah["prob_fallback_used"] = ah["magnitude"] < CONFIG["ah_shift_threshold"]
+    ah["prob_fallback"] = ah_prob
 
     return {
         "tier": classify_tier(total) if not contested else "contested",
