@@ -50,6 +50,22 @@ CONFIG = {
     "min_age_hours_for_signal": 2.0,
 }
 
+# Rejected: per-league / liquidity-aware thresholds (scaling ah_shift_
+# threshold and x2_noise_floor_pp down for thin markets, on the theory
+# that a casual bettor can swing a low-limit market by accident, so a
+# bigger relative move should be required there to count as a real
+# signal). Backtested against 2 real MJP rounds by bucketing matches into
+# thin/mid/thick liquidity tiers (opening moneyline limit <$1,000 /
+# $1,000-3,000 / >=$3,000): thin markets showed LOWER average 1X2
+# displacement (1.90pp) and reached sharp/strong_sharp far less often
+# (25%) than mid/thick markets (69-100%) - despite being tracked for MORE
+# hours on average (92.7h vs 65.2h), which rules out "shorter observation
+# window" as the explanation. The theory predicted thin markets would
+# show MORE apparent (noisy) movement, needing a stricter bar; the data
+# shows the opposite - thin leagues are simply quieter overall, most
+# likely because sharp money concentrates on bigger leagues rather than
+# bothering with niche ones. Not implemented.
+
 
 def _first_last(series: list[dict], field: str) -> tuple[Any, Any]:
     valid = [s for s in series if s.get(field) is not None and s.get("status") != "suspended"]
