@@ -99,6 +99,22 @@ def x2_displacement(moneyline_series: list[dict]) -> dict:
 
 
 def limit_drop_pct(series: list[dict]) -> float:
+    """Only ever measures a drop - a rise is clamped to 0.0, deliberately.
+
+    A "limit rises when Pinnacle is confident in the price" signal was
+    investigated and rejected after checking it against 2 real MJP rounds
+    (33 matches): every single match showed a net limit *rise*, never a
+    drop, and the rise percentages repeated identically across unrelated
+    matches in the same league (e.g. two different Czech First Liga
+    matches both went +400% ML, two different Serie A matches both went
+    +344.4%). That pattern is consistent with Pinnacle mechanically
+    ramping a new market from a small placeholder limit up to its
+    standard size on a fixed per-league schedule, independent of any
+    money actually landing on that specific match - not with the book
+    reacting to real order flow. Reviving a rise-based signal would need
+    a real per-league baseline ramp curve to detect deviations *from*,
+    not just "did it rise," which the 2-round sample can't support yet.
+    """
     opening, current = _first_last(series, "limit_amount")
     if not opening or opening <= 0 or current is None:
         return 0.0
