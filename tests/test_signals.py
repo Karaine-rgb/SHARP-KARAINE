@@ -144,10 +144,39 @@ def test_velocity_shape_quiet_below_floor():
     assert result["label"] == "quiet"
 
 
-def test_velocity_shape_insufficient_history_when_tracked_too_recently():
-    series = [ml_point(2, 0.40, 0.30, 0.30), ml_point(0.5, 0.46, 0.28, 0.26)]
+def test_velocity_shape_insufficient_history_when_truly_too_recent():
+    # only 18 minutes of total history - even the shrunk adaptive window
+    # (see below) can't get above velocity_min_window_hours (15 min) here
+    series = [ml_point(0.4, 0.40, 0.30, 0.30), ml_point(0.1, 0.46, 0.28, 0.26)]
     result = velocity_shape(series)
     assert result["label"] == "insufficient_history"
+
+
+def test_velocity_shape_adaptive_window_still_classifies_a_short_history():
+    # only 1.9h of total history - the old fixed-3h-window version would
+    # have needed 6h and called this "insufficient_history" outright, even
+    # though a real, fast move is sitting right there in the data
+    series = [
+        ml_point(2, 0.40, 0.30, 0.30),
+        ml_point(1.9, 0.40, 0.30, 0.30),  # flat for almost the whole window
+        ml_point(0.1, 0.46, 0.28, 0.26),  # then a real move near the end
+    ]
+    result = velocity_shape(series)
+    assert result["label"] == "steam"
+    assert result["window_hours"] < CONFIG["velocity_window_hours"]
+
+
+def test_velocity_shape_swung_back_when_move_reverts_by_the_end():
+    # a real 8pp swing happens, then it comes almost all the way back -
+    # opening vs current alone would show ~0 change and call this "quiet"
+    series = [
+        ml_point(48, 0.400, 0.30, 0.300),
+        ml_point(24, 0.480, 0.27, 0.250),  # swung hard toward home
+        ml_point(0.5, 0.402, 0.30, 0.298),  # and back to near where it started
+    ]
+    result = velocity_shape(series)
+    assert result["label"] == "swung_back"
+    assert result["peak_change_pp"] == pytest.approx(8.0, abs=0.1)
 
 
 def test_velocity_shape_no_label_with_fewer_than_two_snapshots():

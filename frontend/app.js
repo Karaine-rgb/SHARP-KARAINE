@@ -381,9 +381,15 @@ function renderCards(detail) {
     drift: "Drift — old move, gone quiet",
     building: "Building — move still in progress",
     reversal: "Reversal — recently backing off",
+    swung_back: "Swung and came back",
     quiet: "Quiet — no meaningful move",
     insufficient_history: "Not enough history yet",
   };
+  const velHistory = detail.velocity_transitions || [];
+  const velHistoryLine = velHistory
+    .filter((v) => v.label)
+    .map((v) => `${new Date(v.at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} ${v.label}`)
+    .join(" → ");
 
   cardsEl.innerHTML = `
     <div class="card">
@@ -411,12 +417,13 @@ function renderCards(detail) {
       <div class="value">${fmtPct(lim.moneyline_limit_drop_pct)} 1X2 / ${fmtPct(lim.spread_limit_drop_pct)} AH</div>
       <div class="sub">% drop vs opening market limit</div>
     </div>
-    <div class="card card-experimental">
+    <div class="card card-experimental card-wide">
       <h4>Move shape <span class="pill-experimental">watch only</span></h4>
       <div class="value">${vel.label ? (velLabels[vel.label] || vel.label) : "—"}</div>
       <div class="sub">${vel.total_change_pp !== undefined && vel.label && vel.label !== "quiet" && vel.label !== "insufficient_history"
-        ? `${fmtPp(vel.total_change_pp)} total${vel.recent_change_pp != null ? `, ${fmtPp(vel.recent_change_pp)} in the last ${vel.window_hours}h` : ""}`
+        ? `${fmtPp(vel.total_change_pp)} total${vel.recent_change_pp != null ? `, ${fmtPp(vel.recent_change_pp)} in the last ${vel.window_hours.toFixed(2)}h` : ""}${vel.peak_change_pp != null && vel.label === "swung_back" ? ` (peaked at ${fmtPp(vel.peak_change_pp)})` : ""}`
         : "Not scored — promising in early testing, not yet proven"}</div>
+      ${velHistoryLine ? `<div class="sub vel-history">History: ${velHistoryLine}</div>` : ""}
     </div>
   `;
 }

@@ -187,6 +187,8 @@ tbody tr:hover { background: var(--bg-elevated); }
   color: var(--tier-sharp); border: 1px solid var(--tier-sharp); border-radius: 8px;
   padding: 1px 6px; margin-left: 6px; vertical-align: middle;
 }
+.card-wide { flex-basis: 100%; }
+.vel-history { margin-top: 6px; word-break: break-word; }
 
 .raw-data h3, .raw-table-section h3 { color: var(--accent); font-size: 13px; border-top: 1px solid var(--border); padding-top: 16px; }
 .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; }

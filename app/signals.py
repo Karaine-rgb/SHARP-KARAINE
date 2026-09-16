@@ -53,6 +53,7 @@ CONFIG = {
     # this still-unproven, watch-only signal too.
     "velocity_floor_pp": 0.30,
     "velocity_window_hours": 3.0,
+    "velocity_min_window_hours": 0.25,  # 15 min - below this, a window is too short to be meaningful given real poll spacing
     "velocity_steam_ratio": 0.70,
     "velocity_drift_ratio": 0.20,
 }
@@ -123,10 +124,11 @@ def x2_displacement(moneyline_series: list[dict]) -> dict:
 
 def velocity_shape(moneyline_series: list[dict]) -> dict:
     """Classifies HOW a 1X2 move happened over time, not just how big it
-    got: a fast move concentrated in the last `velocity_window_hours`
-    ("steam"), an old move that already happened and has since gone quiet
-    ("drift"), a move still actively accumulating ("building"), or one
-    that's now heading back the other way ("reversal").
+    got: a fast move concentrated in the recent window ("steam"), an old
+    move that already happened and has since gone quiet ("drift"), a move
+    still actively accumulating ("building"), one now heading back the
+    other way ("reversal"), or one that swung away from the opening line
+    and came most of the way back by the time we're checking ("swung_back").
 
     WATCH-ONLY - not wired into ah_score, x2_score, or the tier badge.
     Backtested against 2 real MJP rounds (32 matches, one confirmed non-
@@ -141,15 +143,33 @@ def velocity_shape(moneyline_series: list[dict]) -> dict:
     promising, not proven. Surfaced on the dashboard so it can keep being
     checked against real outcomes as more rounds come in, exactly like
     every other number in this file that started as a plain guess.
+
+    Two known gaps, found and fixed after the first version shipped:
+    - The look-back window used to be fixed (e.g. always 3h), which meant
+      any match tracked for under 2x that window got no read at all,
+      however big a move happened. It now shrinks to fit whatever history
+      actually exists (down to `velocity_min_window_hours`), so an early
+      real move still gets classified, just against a shorter recent
+      slice - and if there genuinely isn't a usable window yet, it still
+      honestly says "insufficient_history" rather than guessing.
+    - A big swing that fully reverts by the time of the latest snapshot
+      used to be invisible: opening-vs-current would show ~0 change, so
+      it was called "quiet" even though something real happened along the
+      way. Now the single largest deviation from the opening value,
+      anywhere in the whole series, is tracked too - if that peak cleared
+      the floor even though the net change didn't, it's labelled
+      "swung_back" instead of being silently absorbed into "quiet".
     """
     c = CONFIG
-    window_hours = c["velocity_window_hours"]
+    configured_window = c["velocity_window_hours"]
+    min_window = c["velocity_min_window_hours"]
     floor = c["velocity_floor_pp"]
     result = {
         "label": None,
         "total_change_pp": 0.0,
         "recent_change_pp": None,
-        "window_hours": window_hours,
+        "peak_change_pp": None,
+        "window_hours": configured_window,
     }
 
     valid = [
@@ -163,19 +183,28 @@ def velocity_shape(moneyline_series: list[dict]) -> dict:
     opening, current = valid[0], valid[-1]
     home_pp = (current["fair_home_prob"] - opening["fair_home_prob"]) * 100.0
     away_pp = (current["fair_away_prob"] - opening["fair_away_prob"]) * 100.0
-    total_change = home_pp if abs(home_pp) >= abs(away_pp) else away_pp
+    field = "fair_home_prob" if abs(home_pp) >= abs(away_pp) else "fair_away_prob"
+    total_change = home_pp if field == "fair_home_prob" else away_pp
     result["total_change_pp"] = total_change
 
+    opening_val = opening[field]
+    peak_point = max(valid, key=lambda s: abs((s[field] - opening_val) * 100.0))
+    peak_change = (peak_point[field] - opening_val) * 100.0
+    result["peak_change_pp"] = peak_change
+
     if abs(total_change) < floor:
-        result["label"] = "quiet"
+        result["label"] = "swung_back" if abs(peak_change) >= floor else "quiet"
         return result
 
     last_dt, first_dt = current["captured_at"], opening["captured_at"]
-    cutoff = last_dt - timedelta(hours=window_hours)
-    if cutoff < first_dt + timedelta(hours=window_hours):
+    total_history_hours = (last_dt - first_dt).total_seconds() / 3600.0
+    effective_window = min(configured_window, total_history_hours / 2.0)
+    if effective_window < min_window:
         result["label"] = "insufficient_history"
         return result
+    result["window_hours"] = effective_window
 
+    cutoff = last_dt - timedelta(hours=effective_window)
     older = [s for s in valid if s["captured_at"] <= cutoff]
     if not older:
         result["label"] = "insufficient_history"
@@ -184,7 +213,7 @@ def velocity_shape(moneyline_series: list[dict]) -> dict:
     baseline = older[-1]
     recent_home_pp = (current["fair_home_prob"] - baseline["fair_home_prob"]) * 100.0
     recent_away_pp = (current["fair_away_prob"] - baseline["fair_away_prob"]) * 100.0
-    recent_change = recent_home_pp if abs(home_pp) >= abs(away_pp) else recent_away_pp
+    recent_change = recent_home_pp if field == "fair_home_prob" else recent_away_pp
     result["recent_change_pp"] = recent_change
 
     if (recent_change > 0) != (total_change > 0) and abs(recent_change) >= floor:
