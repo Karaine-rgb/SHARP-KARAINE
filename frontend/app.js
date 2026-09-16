@@ -375,6 +375,15 @@ function renderCards(detail) {
   const ah = sig.ah_line_shift?.detail_json || {};
   const x2 = sig.x2_displacement?.detail_json || {};
   const lim = sig.limit_movement?.detail_json || {};
+  const vel = sig.velocity_shape?.detail_json || {};
+  const velLabels = {
+    steam: "Steam — fast, recent move",
+    drift: "Drift — old move, gone quiet",
+    building: "Building — move still in progress",
+    reversal: "Reversal — recently backing off",
+    quiet: "Quiet — no meaningful move",
+    insufficient_history: "Not enough history yet",
+  };
 
   cardsEl.innerHTML = `
     <div class="card">
@@ -401,6 +410,13 @@ function renderCards(detail) {
       <h4>Limit movement</h4>
       <div class="value">${fmtPct(lim.moneyline_limit_drop_pct)} 1X2 / ${fmtPct(lim.spread_limit_drop_pct)} AH</div>
       <div class="sub">% drop vs opening market limit</div>
+    </div>
+    <div class="card card-experimental">
+      <h4>Move shape <span class="pill-experimental">watch only</span></h4>
+      <div class="value">${vel.label ? (velLabels[vel.label] || vel.label) : "—"}</div>
+      <div class="sub">${vel.total_change_pp !== undefined && vel.label && vel.label !== "quiet" && vel.label !== "insufficient_history"
+        ? `${fmtPp(vel.total_change_pp)} total${vel.recent_change_pp != null ? `, ${fmtPp(vel.recent_change_pp)} in the last ${vel.window_hours}h` : ""}`
+        : "Not scored — promising in early testing, not yet proven"}</div>
     </div>
   `;
 }

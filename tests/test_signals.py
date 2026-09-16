@@ -10,6 +10,7 @@ from app.signals import (
     data_sufficiency,
     detect_contested,
     limit_drop_pct,
+    velocity_shape,
     x2_displacement,
 )
 
@@ -91,6 +92,67 @@ def test_x2_displacement_noise_floor():
     ]
     result = x2_displacement(series)
     assert result["direction"] is None
+
+
+# ---------------------------------------------------------------------------
+# velocity_shape (window default is 3h, per CONFIG["velocity_window_hours"])
+# ---------------------------------------------------------------------------
+
+def test_velocity_shape_steam_when_move_concentrated_in_window():
+    series = [
+        ml_point(48, 0.40, 0.30, 0.30),
+        ml_point(5, 0.40, 0.30, 0.30),   # flat right up until the window starts
+        ml_point(0.5, 0.46, 0.28, 0.26),  # then the whole move happens inside it
+    ]
+    result = velocity_shape(series)
+    assert result["label"] == "steam"
+
+
+def test_velocity_shape_drift_when_move_already_settled():
+    series = [
+        ml_point(48, 0.40, 0.30, 0.30),
+        ml_point(40, 0.46, 0.28, 0.26),  # the move already happened, days ago
+        ml_point(0.5, 0.46, 0.28, 0.26),  # nothing since - flat inside the window
+    ]
+    result = velocity_shape(series)
+    assert result["label"] == "drift"
+
+
+def test_velocity_shape_building_when_move_is_split():
+    series = [
+        ml_point(48, 0.40, 0.30, 0.30),
+        ml_point(40, 0.43, 0.29, 0.28),  # half the move happens early
+        ml_point(0.5, 0.46, 0.28, 0.26),  # the other half happens inside the window
+    ]
+    result = velocity_shape(series)
+    assert result["label"] == "building"
+
+
+def test_velocity_shape_reversal_when_recent_move_flips_direction():
+    series = [
+        ml_point(48, 0.40, 0.30, 0.30),
+        ml_point(40, 0.50, 0.26, 0.24),  # moved home a lot, early
+        ml_point(0.5, 0.44, 0.29, 0.27),  # recently reversed back toward away
+    ]
+    result = velocity_shape(series)
+    assert result["label"] == "reversal"
+
+
+def test_velocity_shape_quiet_below_floor():
+    series = [ml_point(48, 0.400, 0.30, 0.300), ml_point(0.5, 0.401, 0.30, 0.299)]
+    result = velocity_shape(series)
+    assert result["label"] == "quiet"
+
+
+def test_velocity_shape_insufficient_history_when_tracked_too_recently():
+    series = [ml_point(2, 0.40, 0.30, 0.30), ml_point(0.5, 0.46, 0.28, 0.26)]
+    result = velocity_shape(series)
+    assert result["label"] == "insufficient_history"
+
+
+def test_velocity_shape_no_label_with_fewer_than_two_snapshots():
+    assert velocity_shape([])["label"] is None
+    assert velocity_shape([ml_point(1, 0.4, 0.3, 0.3)])["label"] is None
 
 
 # ---------------------------------------------------------------------------

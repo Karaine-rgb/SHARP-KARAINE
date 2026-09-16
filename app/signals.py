@@ -48,6 +48,13 @@ CONFIG = {
     "early_late_split_hours": 24,  # boundary between "early week" and "late window"
     "min_snapshots_for_signal": 2,
     "min_age_hours_for_signal": 2.0,
+    # velocity_shape() only - kept separate from x2_noise_floor_pp on
+    # purpose so tuning the real scored threshold never silently changes
+    # this still-unproven, watch-only signal too.
+    "velocity_floor_pp": 0.30,
+    "velocity_window_hours": 3.0,
+    "velocity_steam_ratio": 0.70,
+    "velocity_drift_ratio": 0.20,
 }
 
 # Rejected: per-league / liquidity-aware thresholds (scaling ah_shift_
@@ -111,6 +118,86 @@ def x2_displacement(moneyline_series: list[dict]) -> dict:
         result["magnitude"] = abs(away_pp)
         if abs(away_pp) >= CONFIG["x2_noise_floor_pp"]:
             result["direction"] = "away" if away_pp > 0 else "home"
+    return result
+
+
+def velocity_shape(moneyline_series: list[dict]) -> dict:
+    """Classifies HOW a 1X2 move happened over time, not just how big it
+    got: a fast move concentrated in the last `velocity_window_hours`
+    ("steam"), an old move that already happened and has since gone quiet
+    ("drift"), a move still actively accumulating ("building"), or one
+    that's now heading back the other way ("reversal").
+
+    WATCH-ONLY - not wired into ah_score, x2_score, or the tier badge.
+    Backtested against 2 real MJP rounds (32 matches, one confirmed non-
+    jackpot test fixture excluded) on the AH line first: that line only
+    ever moved in single atomic 0.25pt jumps, giving this classification
+    nothing to actually distinguish. Re-run on the 1X2 series instead
+    (real, continuous movement, not quantized steps), across 3h/6h/12h
+    windows: "steam" and "building" calls were right about 70-100% of the
+    time, "drift" calls only about 20-50% - a real, consistent pattern
+    across all three windows tried. But the samples behind each label
+    were tiny (as few as 2-5 decisive matches per label per window) -
+    promising, not proven. Surfaced on the dashboard so it can keep being
+    checked against real outcomes as more rounds come in, exactly like
+    every other number in this file that started as a plain guess.
+    """
+    c = CONFIG
+    window_hours = c["velocity_window_hours"]
+    floor = c["velocity_floor_pp"]
+    result = {
+        "label": None,
+        "total_change_pp": 0.0,
+        "recent_change_pp": None,
+        "window_hours": window_hours,
+    }
+
+    valid = [
+        s for s in moneyline_series
+        if s.get("fair_home_prob") is not None and s.get("fair_away_prob") is not None
+        and s.get("status") != "suspended"
+    ]
+    if len(valid) < 2:
+        return result
+
+    opening, current = valid[0], valid[-1]
+    home_pp = (current["fair_home_prob"] - opening["fair_home_prob"]) * 100.0
+    away_pp = (current["fair_away_prob"] - opening["fair_away_prob"]) * 100.0
+    total_change = home_pp if abs(home_pp) >= abs(away_pp) else away_pp
+    result["total_change_pp"] = total_change
+
+    if abs(total_change) < floor:
+        result["label"] = "quiet"
+        return result
+
+    last_dt, first_dt = current["captured_at"], opening["captured_at"]
+    cutoff = last_dt - timedelta(hours=window_hours)
+    if cutoff < first_dt + timedelta(hours=window_hours):
+        result["label"] = "insufficient_history"
+        return result
+
+    older = [s for s in valid if s["captured_at"] <= cutoff]
+    if not older:
+        result["label"] = "insufficient_history"
+        return result
+
+    baseline = older[-1]
+    recent_home_pp = (current["fair_home_prob"] - baseline["fair_home_prob"]) * 100.0
+    recent_away_pp = (current["fair_away_prob"] - baseline["fair_away_prob"]) * 100.0
+    recent_change = recent_home_pp if abs(home_pp) >= abs(away_pp) else recent_away_pp
+    result["recent_change_pp"] = recent_change
+
+    if (recent_change > 0) != (total_change > 0) and abs(recent_change) >= floor:
+        result["label"] = "reversal"
+        return result
+
+    ratio = abs(recent_change) / abs(total_change) if total_change else 0.0
+    if ratio >= c["velocity_steam_ratio"]:
+        result["label"] = "steam"
+    elif ratio <= c["velocity_drift_ratio"]:
+        result["label"] = "drift"
+    else:
+        result["label"] = "building"
     return result
 
 
@@ -229,6 +316,7 @@ def compute_match_score(
             "contested": False,
             "ah": ah_line_shift(spread_series),
             "x2": x2_displacement(moneyline_series),
+            "velocity": velocity_shape(moneyline_series),
             "moneyline_limit_drop_pct": limit_drop_pct(moneyline_series),
             "spread_limit_drop_pct": limit_drop_pct(spread_series),
             "ah_score": 0.0,
@@ -306,6 +394,7 @@ def compute_match_score(
         "contested": contested,
         "ah": ah,
         "x2": x2,
+        "velocity": velocity_shape(moneyline_series),
         "moneyline_limit_drop_pct": ml_limit_drop,
         "spread_limit_drop_pct": sp_limit_drop,
         "ah_score": ah_score,
@@ -367,7 +456,8 @@ async def compute_and_store_score(matchup_id: int, kickoff: datetime) -> dict:
         insert into signals (matchup_id, signal_type, direction, magnitude, detail_json)
         values ($1,'ah_line_shift',$2,$3,$4::jsonb),
                ($1,'x2_displacement',$5,$6,$7::jsonb),
-               ($1,'limit_movement',$8,$9,$10::jsonb)
+               ($1,'limit_movement',$8,$9,$10::jsonb),
+               ($1,'velocity_shape',$11,$12,$13::jsonb)
         """,
         matchup_id,
         result["ah"]["direction"],
@@ -384,5 +474,11 @@ async def compute_and_store_score(matchup_id: int, kickoff: datetime) -> dict:
                 "spread_limit_drop_pct": result["spread_limit_drop_pct"],
             }
         ),
+        # "direction" column repurposed as the shape label (steam/drift/
+        # building/reversal/quiet/None) - this signal has no home/away
+        # side of its own, it's watch-only, see velocity_shape() docstring.
+        result["velocity"]["label"],
+        abs(result["velocity"]["total_change_pp"]),
+        db.to_jsonb(result["velocity"]),
     )
     return result
