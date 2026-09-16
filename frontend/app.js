@@ -415,6 +415,7 @@ function renderCards(detail) {
       <h4>1X2 displacement</h4>
       <div class="value">${fmtPp(x2.home_pp)} H / ${fmtPp(x2.draw_pp)} D / ${fmtPp(x2.away_pp)} A</div>
       <div class="sub">from true opening line</div>
+      ${x2.swung_back ? `<div class="sub">⚠ swung back: peaked at ${fmtPp(x2.peak_pp)} ${x2.peak_side} earlier, since retraced — not scored, shown for context only</div>` : ""}
     </div>
     <div class="card">
       <h4>Limit movement</h4>

@@ -94,6 +94,32 @@ def test_x2_displacement_noise_floor():
     assert result["direction"] is None
 
 
+def test_x2_displacement_swung_back_when_move_reverts_by_the_end():
+    # a real 5pp home swing happens, then it comes almost all the way back -
+    # opening vs current alone shows ~0pp and no direction, hiding that a
+    # real move happened along the way
+    series = [
+        ml_point(48, 0.400, 0.30, 0.300),
+        ml_point(24, 0.450, 0.28, 0.270),  # peaked at +5.0pp home
+        ml_point(1, 0.402, 0.30, 0.298),   # back to near the opening line
+    ]
+    result = x2_displacement(series)
+    assert result["direction"] is None  # final reading: nothing happened
+    assert result["peak_side"] == "home"
+    assert result["peak_pp"] == pytest.approx(5.0, abs=0.1)
+    assert result["swung_back"] is True
+
+
+def test_x2_displacement_no_swung_back_when_move_holds():
+    series = [
+        ml_point(48, 0.40, 0.30, 0.30),
+        ml_point(1, 0.46, 0.28, 0.26),  # move happens and stays
+    ]
+    result = x2_displacement(series)
+    assert result["direction"] == "home"
+    assert result["swung_back"] is False
+
+
 def test_x2_displacement_draw_backed():
     # money moves onto the draw, off of both home and away - a real
     # jackpot scenario the old home-vs-away-only comparison could never
