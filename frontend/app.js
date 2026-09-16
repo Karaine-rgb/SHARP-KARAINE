@@ -418,6 +418,11 @@ function renderCards(detail) {
       <h4>AH line shift</h4>
       <div class="value">${ah.opening !== undefined ? `${fmtNum(ah.opening)} → ${fmtNum(ah.current)}` : "—"}</div>
       <div class="sub">shift ${fmtNum(ah.shift)} / direction ${ah.direction || "—"}</div>
+      ${ah.prob_fallback_used
+        ? `<div class="sub">ℹ line hasn't moved, but the price at that line has: ${ah.prob_fallback?.direction
+            ? `${fmtPp(ah.prob_fallback.magnitude)} toward ${ah.prob_fallback.direction} — this is what's driving the score`
+            : "not enough movement there either"}</div>`
+        : ""}
     </div>
     <div class="card">
       <h4>1X2 displacement</h4>
