@@ -103,6 +103,15 @@ def x2_displacement(moneyline_series: list[dict]) -> dict:
     {captured_at, fair_home_prob, fair_draw_prob, fair_away_prob, status}.
     Displacement is in percentage points (pp), from the true opening line
     (the first stored snapshot, not an arbitrary baseline).
+
+    Fixed flaw: an earlier version only ever compared home vs away, so
+    "draw" could never come out as the direction - even though jackpot
+    rounds always include matches that end in draws. The three fair
+    probabilities are de-vigged, so they always sum to 1 at both ends:
+    home_pp + draw_pp + away_pp ≈ 0, money can't land on one side without
+    leaving the others. So whichever of the three has the single most
+    POSITIVE pp change is the one actually being backed - that also
+    naturally lets draw win when it's the side seeing real money.
     """
     result = {"home_pp": 0.0, "draw_pp": 0.0, "away_pp": 0.0, "magnitude": 0.0, "direction": None}
     for outcome in ("home", "draw", "away"):
@@ -110,15 +119,12 @@ def x2_displacement(moneyline_series: list[dict]) -> dict:
         if opening is not None and current is not None:
             result[f"{outcome}_pp"] = (current - opening) * 100.0
 
-    home_pp, away_pp = result["home_pp"], result["away_pp"]
-    if abs(home_pp) >= abs(away_pp):
-        result["magnitude"] = abs(home_pp)
-        if abs(home_pp) >= CONFIG["x2_noise_floor_pp"]:
-            result["direction"] = "home" if home_pp > 0 else "away"
-    else:
-        result["magnitude"] = abs(away_pp)
-        if abs(away_pp) >= CONFIG["x2_noise_floor_pp"]:
-            result["direction"] = "away" if away_pp > 0 else "home"
+    candidates = {"home": result["home_pp"], "draw": result["draw_pp"], "away": result["away_pp"]}
+    leading_side = max(candidates, key=lambda k: candidates[k])
+    magnitude = abs(candidates[leading_side])
+    result["magnitude"] = magnitude
+    if magnitude >= CONFIG["x2_noise_floor_pp"]:
+        result["direction"] = leading_side
     return result
 
 
@@ -144,7 +150,7 @@ def velocity_shape(moneyline_series: list[dict]) -> dict:
     checked against real outcomes as more rounds come in, exactly like
     every other number in this file that started as a plain guess.
 
-    Two known gaps, found and fixed after the first version shipped:
+    Three known gaps, found and fixed after the first version shipped:
     - The look-back window used to be fixed (e.g. always 3h), which meant
       any match tracked for under 2x that window got no read at all,
       however big a move happened. It now shrinks to fit whatever history
@@ -159,6 +165,15 @@ def velocity_shape(moneyline_series: list[dict]) -> dict:
       anywhere in the whole series, is tracked too - if that peak cleared
       the floor even though the net change didn't, it's labelled
       "swung_back" instead of being silently absorbed into "quiet".
+    - It used to only ever compare home vs away, the same flaw
+      x2_displacement() had: draw could never be the side a move was
+      measured on, and the result never said which side (home/draw/away)
+      the move was even about - a "steam" label alone didn't say steam on
+      what. Both are fixed the same way: all three pp changes are
+      computed, the one with the most POSITIVE change is the side the
+      move is about (see x2_displacement()'s docstring for why "most
+      positive" is the right test), and that side is now returned as
+      `result["side"]`.
     """
     c = CONFIG
     configured_window = c["velocity_window_hours"]
@@ -166,6 +181,7 @@ def velocity_shape(moneyline_series: list[dict]) -> dict:
     floor = c["velocity_floor_pp"]
     result = {
         "label": None,
+        "side": None,
         "total_change_pp": 0.0,
         "recent_change_pp": None,
         "peak_change_pp": None,
@@ -174,17 +190,21 @@ def velocity_shape(moneyline_series: list[dict]) -> dict:
 
     valid = [
         s for s in moneyline_series
-        if s.get("fair_home_prob") is not None and s.get("fair_away_prob") is not None
-        and s.get("status") != "suspended"
+        if s.get("fair_home_prob") is not None and s.get("fair_draw_prob") is not None
+        and s.get("fair_away_prob") is not None and s.get("status") != "suspended"
     ]
     if len(valid) < 2:
         return result
 
     opening, current = valid[0], valid[-1]
-    home_pp = (current["fair_home_prob"] - opening["fair_home_prob"]) * 100.0
-    away_pp = (current["fair_away_prob"] - opening["fair_away_prob"]) * 100.0
-    field = "fair_home_prob" if abs(home_pp) >= abs(away_pp) else "fair_away_prob"
-    total_change = home_pp if field == "fair_home_prob" else away_pp
+    candidates = {
+        outcome: (current[f"fair_{outcome}_prob"] - opening[f"fair_{outcome}_prob"]) * 100.0
+        for outcome in ("home", "draw", "away")
+    }
+    side = max(candidates, key=lambda k: candidates[k])
+    field = f"fair_{side}_prob"
+    total_change = candidates[side]
+    result["side"] = side
     result["total_change_pp"] = total_change
 
     opening_val = opening[field]
@@ -211,9 +231,7 @@ def velocity_shape(moneyline_series: list[dict]) -> dict:
         return result
 
     baseline = older[-1]
-    recent_home_pp = (current["fair_home_prob"] - baseline["fair_home_prob"]) * 100.0
-    recent_away_pp = (current["fair_away_prob"] - baseline["fair_away_prob"]) * 100.0
-    recent_change = recent_home_pp if field == "fair_home_prob" else recent_away_pp
+    recent_change = (current[field] - baseline[field]) * 100.0
     result["recent_change_pp"] = recent_change
 
     if (recent_change > 0) != (total_change > 0) and abs(recent_change) >= floor:

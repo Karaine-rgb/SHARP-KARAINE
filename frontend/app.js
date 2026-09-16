@@ -390,6 +390,10 @@ function renderCards(detail) {
     .filter((v) => v.label)
     .map((v) => `${new Date(v.at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} ${v.label}`)
     .join(" → ");
+  const velSideNames = { home: "home", draw: "draw", away: "away" };
+  const velLabelText = vel.label
+    ? `${velLabels[vel.label] || vel.label}${vel.side && vel.label !== "quiet" && vel.label !== "insufficient_history" ? ` (${velSideNames[vel.side] || vel.side})` : ""}`
+    : "—";
 
   cardsEl.innerHTML = `
     <div class="card">
@@ -419,7 +423,7 @@ function renderCards(detail) {
     </div>
     <div class="card card-experimental card-wide">
       <h4>Move shape <span class="pill-experimental">watch only</span></h4>
-      <div class="value">${vel.label ? (velLabels[vel.label] || vel.label) : "—"}</div>
+      <div class="value">${velLabelText}</div>
       <div class="sub">${vel.total_change_pp !== undefined && vel.label && vel.label !== "quiet" && vel.label !== "insufficient_history"
         ? `${fmtPp(vel.total_change_pp)} total${vel.recent_change_pp != null ? `, ${fmtPp(vel.recent_change_pp)} in the last ${vel.window_hours.toFixed(2)}h` : ""}${vel.peak_change_pp != null && vel.label === "swung_back" ? ` (peaked at ${fmtPp(vel.peak_change_pp)})` : ""}`
         : "Not scored — promising in early testing, not yet proven"}</div>

@@ -94,6 +94,19 @@ def test_x2_displacement_noise_floor():
     assert result["direction"] is None
 
 
+def test_x2_displacement_draw_backed():
+    # money moves onto the draw, off of both home and away - a real
+    # jackpot scenario the old home-vs-away-only comparison could never
+    # report, since it never even looked at draw_pp
+    series = [
+        ml_point(48, 0.34, 0.30, 0.36),
+        ml_point(1, 0.31, 0.36, 0.33),
+    ]
+    result = x2_displacement(series)
+    assert result["draw_pp"] == pytest.approx(6.0, abs=0.05)
+    assert result["direction"] == "draw"
+
+
 # ---------------------------------------------------------------------------
 # velocity_shape (window default is 3h, per CONFIG["velocity_window_hours"])
 # ---------------------------------------------------------------------------
@@ -105,6 +118,21 @@ def test_velocity_shape_steam_when_move_concentrated_in_window():
         ml_point(0.5, 0.46, 0.28, 0.26),  # then the whole move happens inside it
     ]
     result = velocity_shape(series)
+    assert result["label"] == "steam"
+    assert result["side"] == "home"
+
+
+def test_velocity_shape_reports_draw_as_the_side():
+    # money moves onto the draw this time, not home or away - the old
+    # version could never say this, since it only ever compared home vs
+    # away and had no "side" output at all
+    series = [
+        ml_point(48, 0.34, 0.30, 0.36),
+        ml_point(5, 0.34, 0.30, 0.36),
+        ml_point(0.5, 0.31, 0.36, 0.33),
+    ]
+    result = velocity_shape(series)
+    assert result["side"] == "draw"
     assert result["label"] == "steam"
 
 

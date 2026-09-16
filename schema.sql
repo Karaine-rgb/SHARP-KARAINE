@@ -68,7 +68,7 @@ create table if not exists match_scores (
     convergence_bonus double precision not null default 0,
     total_score   double precision not null,
     tier          text not null,   -- strong_sharp | sharp | watch | no_signal | insufficient_data
-    sharp_side    text,            -- home | away | contested | null
+    sharp_side    text,            -- home | draw | away | contested | null
     contested     boolean not null default false,
     primary key (matchup_id, computed_at)
 );
