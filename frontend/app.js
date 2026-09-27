@@ -140,7 +140,7 @@ async function loadSummary() {
   const rows = await api(`/matches/summary${qs}`);
   const body = document.getElementById("summary-body");
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="12" class="dim">No matches in this round yet — use Discovery to add the Megajackpot fixtures.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="13" class="dim">No matches in this round yet — use Discovery to add the Megajackpot fixtures.</td></tr>`;
     return;
   }
   body.innerHTML = rows
@@ -150,6 +150,8 @@ async function loadSummary() {
       const lim = r.limit_detail || {};
       const tier = r.tier || "insufficient_data";
       const kickoff = new Date(r.start_time);
+      const hs = r.home_score !== null && r.home_score !== undefined ? r.home_score : "";
+      const as = r.away_score !== null && r.away_score !== undefined ? r.away_score : "";
       return `
       <tr data-id="${r.id}">
         <td>${kickoff.toLocaleString()}</td>
@@ -164,12 +166,36 @@ async function loadSummary() {
         <td>${ah.opening !== undefined && ah.opening !== null ? `${fmtNum(ah.opening)} → ${fmtNum(ah.current)}` : "—"}</td>
         <td>${ah.magnitude !== undefined ? fmtNum(ah.shift, 2) : "—"}</td>
         <td>${fmtPct(lim.spread_limit_drop_pct)}</td>
+        <td class="result-cell">
+          <input type="number" class="result-input" data-side="home" value="${hs}" placeholder="H" min="0">
+          <span class="dim">-</span>
+          <input type="number" class="result-input" data-side="away" value="${as}" placeholder="A" min="0">
+          <button type="button" class="btn btn-ghost result-save" title="Save result">✓</button>
+        </td>
       </tr>`;
     })
     .join("");
 
   body.querySelectorAll("tr[data-id]").forEach((tr) => {
-    tr.addEventListener("click", () => openDrilldown(Number(tr.dataset.id)));
+    tr.addEventListener("click", (e) => {
+      if (e.target.closest(".result-cell")) return;
+      openDrilldown(Number(tr.dataset.id));
+    });
+  });
+  body.querySelectorAll(".result-save").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const tr = btn.closest("tr[data-id]");
+      const homeInput = tr.querySelector('.result-input[data-side="home"]');
+      const awayInput = tr.querySelector('.result-input[data-side="away"]');
+      const home_score = homeInput.value === "" ? null : Number(homeInput.value);
+      const away_score = awayInput.value === "" ? null : Number(awayInput.value);
+      btn.disabled = true;
+      try {
+        await api(`/matches/${tr.dataset.id}/result`, { method: "PATCH", body: JSON.stringify({ home_score, away_score }) });
+      } finally {
+        btn.disabled = false;
+      }
+    });
   });
   tickCountdowns();
 }
@@ -552,7 +578,9 @@ function renderCharts(detail) {
 async function openDrilldown(matchupId) {
   currentDrilldownId = matchupId;
   const detail = await api(`/matches/${matchupId}/detail`);
-  document.getElementById("dd-title").textContent = `${detail.matchup.home_team} vs ${detail.matchup.away_team}`;
+  const { home_score, away_score } = detail.matchup;
+  const resultSuffix = home_score !== null && away_score !== null ? ` (${home_score}-${away_score})` : "";
+  document.getElementById("dd-title").textContent = `${detail.matchup.home_team} vs ${detail.matchup.away_team}${resultSuffix}`;
   const ddCountdown = document.getElementById("dd-countdown");
   ddCountdown.dataset.start = detail.matchup.start_time;
   tickCountdowns();

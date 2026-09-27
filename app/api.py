@@ -156,6 +156,25 @@ async def update_match_monitoring(matchup_id: int, is_monitored: bool):
     return {"ok": True}
 
 
+class MatchResult(BaseModel):
+    home_score: int | None = None
+    away_score: int | None = None
+
+
+@router.patch("/matches/{matchup_id}/result")
+async def update_match_result(matchup_id: int, body: MatchResult):
+    """Manually entered final score, kept permanently for backtesting real
+    signals against real outcomes - the dashboard has no other way to know
+    who won. Both null clears a previously-entered result."""
+    await db.execute(
+        "update matchups set home_score = $1, away_score = $2 where id = $3",
+        body.home_score,
+        body.away_score,
+        matchup_id,
+    )
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------------------
 # Summary + detail
 # ---------------------------------------------------------------------------
@@ -201,7 +220,7 @@ async def matches_summary(round_label: str | None = None):
         f"""
         select
             m.id, m.pinnacle_matchup_id, m.home_team, m.away_team, m.league_name,
-            m.start_time, m.mjp_round_label, m.is_monitored,
+            m.start_time, m.mjp_round_label, m.is_monitored, m.home_score, m.away_score,
             s.tier, s.sharp_side, s.contested, s.total_score, s.ah_score, s.x2_score,
             s.limit_bonus, s.convergence_bonus, s.computed_at as score_computed_at,
             ah.detail_json as ah_detail,

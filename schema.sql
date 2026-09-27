@@ -11,8 +11,16 @@ create table if not exists matchups (
     start_time           timestamptz not null,
     is_monitored         boolean not null default false,
     mjp_round_label       text,
-    added_at             timestamptz not null default now()
+    added_at             timestamptz not null default now(),
+    home_score           integer,   -- filled in manually after the match finishes, for
+    away_score           integer    -- backtesting against real signals - null until then
 );
+
+-- Adds the two score columns above to a matchups table that already existed
+-- before they were introduced - a plain create-table-if-not-exists above
+-- would silently skip them on a database that already has the table.
+alter table matchups add column if not exists home_score integer;
+alter table matchups add column if not exists away_score integer;
 
 create table if not exists market_snapshots (
     id               bigserial primary key,

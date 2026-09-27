@@ -189,6 +189,15 @@ tbody tr:hover { background: var(--bg-elevated); }
 }
 .card-wide { flex-basis: 100%; }
 
+.result-cell { display: flex; align-items: center; gap: 4px; }
+.result-input {
+  width: 34px; padding: 3px 4px; text-align: center;
+  background: var(--bg-elevated); color: var(--text); border: 1px solid var(--border);
+  font-family: var(--mono); font-size: 12px; border-radius: 3px;
+}
+.result-save { padding: 2px 7px; font-size: 12px; line-height: 1; }
+.result-save:hover { color: var(--accent); border-color: var(--accent); }
+
 .history-dropdown { margin-top: 6px; font-size: 11px; color: var(--text-dim); }
 .history-dropdown summary { cursor: pointer; color: var(--accent); }
 .history-dropdown summary:hover { color: var(--tier-sharp); }
