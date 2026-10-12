@@ -107,3 +107,43 @@ create table if not exists saved_leagues (
 insert into saved_leagues (league_id, league_name) values
     (1980, 'England - Premier League')
 on conflict (league_id) do nothing;
+
+-- One flat, download-ready table for backtesting: every raw market
+-- snapshot ever collected, with the match it belongs to and the real
+-- final score already attached to each row - no joining three separate
+-- CSV exports by hand anymore. Shows up in Supabase's Table Editor next
+-- to the real tables; "Export CSV" on it gives one complete file.
+-- raw_json is left out on purpose (it's the large original API payload,
+-- not needed for signal work - every field actually used is already its
+-- own column below).
+create or replace view match_snapshots_export as
+select
+    m.id              as matchup_id,
+    m.pinnacle_matchup_id,
+    m.home_team,
+    m.away_team,
+    m.league_name,
+    m.mjp_round_label,
+    m.start_time      as kickoff,
+    m.home_score,
+    m.away_score,
+    ms.id             as snapshot_id,
+    ms.market_key,
+    ms.market_type,
+    ms.period,
+    ms.is_alternate,
+    ms.version,
+    ms.status,
+    ms.cutoff_at,
+    ms.captured_at,
+    ms.home_price,
+    ms.draw_price,
+    ms.away_price,
+    ms.home_points,
+    ms.limit_amount,
+    ms.fair_home_prob,
+    ms.fair_draw_prob,
+    ms.fair_away_prob
+from market_snapshots ms
+join matchups m on m.id = ms.matchup_id
+order by m.id, ms.captured_at;
