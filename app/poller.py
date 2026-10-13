@@ -80,11 +80,15 @@ class Poller:
             "from matchups where is_monitored = true"
         )
         now = datetime.now(timezone.utc)
-        expiry = timedelta(hours=settings.auto_expire_hours_after_kickoff)
         for row in rows:
             matchup_id = row["id"]
-            if now > row["start_time"] + expiry:
-                await self._auto_unmonitor(row, "past the auto-expiry window after kickoff")
+            if now >= row["start_time"]:
+                # Strict cutoff: never collect data at or after kickoff. A
+                # snapshot from a live or settled match isn't pre-match
+                # positioning, and letting it into market_snapshots corrupts
+                # backtesting - every displacement calculation assumes every
+                # snapshot reflects pre-match sharp money. No grace window.
+                await self._auto_unmonitor(row, "kickoff reached - no data collected after kickoff")
                 continue
             state = self._states.setdefault(matchup_id, MatchState(settings.poll_base_interval))
             forced = matchup_id in self.force_poll_ids
@@ -108,12 +112,16 @@ class Poller:
         jitter = random.uniform(settings.poll_jitter_min, settings.poll_jitter_max)
         try:
             raw_markets = await self._client.get_matchup_markets(row["pinnacle_matchup_id"])
-            if not raw_markets and now >= row["start_time"]:
-                # Pinnacle has pulled the match off the board entirely (fully
-                # settled) - no point waiting out the rest of the auto-expiry
-                # window polling a match with nothing left to poll.
-                await self._auto_unmonitor(row, "Pinnacle returned no markets (settled)")
+
+            # Kickoff can pass while this request was in flight - re-check
+            # with a fresh timestamp (not the possibly-stale `now` passed
+            # into this call) and discard this cycle's data entirely rather
+            # than store it. _tick() already stops polling a match once
+            # kickoff is reached; this only catches that one race window.
+            if datetime.now(timezone.utc) >= row["start_time"]:
+                await self._auto_unmonitor(row, "kickoff reached mid-poll - discarding this cycle's data")
                 return
+
             changed = await ingest.ingest_matchup_markets(matchup_id, raw_markets)
             result = await signals.compute_and_store_score(matchup_id, row["start_time"])
             await telegram.maybe_alert_tier_change(
