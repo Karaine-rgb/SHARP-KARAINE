@@ -570,6 +570,14 @@ function renderCharts(detail) {
     { color: COLOR_AWAY, label: "Under odds (right axis)" },
   ]);
 
+  const c7b = makeChart("chart-total-prob");
+  lineOn(c7b, toSeriesData(tot, "fair_home_prob").map((d) => ({ ...d, value: d.value * 100 })), COLOR_HOME);
+  lineOn(c7b, toSeriesData(tot, "fair_away_prob").map((d) => ({ ...d, value: d.value * 100 })), COLOR_AWAY);
+  setLegend("legend-total-prob", [
+    { color: COLOR_HOME, label: "Over (de-vigged %)" },
+    { color: COLOR_AWAY, label: "Under (de-vigged %)" },
+  ]);
+
   const c8 = makeChart("chart-score");
   lineOn(c8, toSeriesData(detail.score_history, "total_score", "computed_at"), COLOR_HOME);
   setLegend("legend-score", [{ color: COLOR_HOME, label: "Composite score (0–10)" }]);
