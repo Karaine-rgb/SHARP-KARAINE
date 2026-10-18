@@ -178,6 +178,43 @@ async def update_match_result(matchup_id: int, body: MatchResult):
     return {"ok": True}
 
 
+@router.patch("/matches/{matchup_id}/remove-from-round")
+async def remove_match_from_round(matchup_id: int):
+    """Takes a match out of its round without deleting it or touching
+    is_monitored - it just moves to the "(unlabeled)" bucket, the same
+    convention every other endpoint already uses for a null mjp_round_label.
+    All its collected data (snapshots, scores, signals, result) stays put."""
+    await db.execute("update matchups set mjp_round_label = null where id = $1", matchup_id)
+    return {"ok": True}
+
+
+class RoundRename(BaseModel):
+    old_label: str
+    new_label: str
+
+
+@router.patch("/rounds/rename")
+async def rename_round(body: RoundRename):
+    """Renames a round across every match carrying that label. Takes the
+    labels in the request body rather than the URL path since round labels
+    are free text and can contain spaces/slashes that don't belong in a
+    path segment."""
+    new_label = body.new_label.strip()
+    if not new_label:
+        raise HTTPException(status_code=400, detail="New round name can't be empty")
+    if body.old_label == "(unlabeled)":
+        raise HTTPException(
+            status_code=400,
+            detail="The (unlabeled) bucket isn't a real round - move matches into a round individually instead",
+        )
+    await db.execute(
+        "update matchups set mjp_round_label = $1 where mjp_round_label = $2",
+        new_label,
+        body.old_label,
+    )
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------------------
 # Summary + detail
 # ---------------------------------------------------------------------------

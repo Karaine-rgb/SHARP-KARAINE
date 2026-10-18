@@ -49,6 +49,21 @@ document.getElementById("round-select").onchange = async (e) => {
   loadSummary();
 };
 
+document.getElementById("btn-rename-round").onclick = async () => {
+  if (!currentRound || currentRound === "(unlabeled)") {
+    alert("Select a real round first - the (unlabeled) bucket isn't a round that can be renamed.");
+    return;
+  }
+  const newName = prompt("New name for this round:", currentRound);
+  if (!newName || !newName.trim() || newName.trim() === currentRound) return;
+  await api("/rounds/rename", {
+    method: "PATCH",
+    body: JSON.stringify({ old_label: currentRound, new_label: newName.trim() }),
+  });
+  await loadRounds(newName.trim());
+  loadSummary();
+};
+
 // ---------------------------------------------------------------------------
 // Download (one CSV per round, or everything, for backtesting elsewhere)
 // ---------------------------------------------------------------------------
@@ -707,6 +722,14 @@ document.getElementById("dd-force-poll").onclick = async () => {
 document.getElementById("dd-unmonitor").onclick = async () => {
   if (!currentDrilldownId) return;
   await api(`/matches/${currentDrilldownId}?is_monitored=false`, { method: "PATCH" });
+  document.getElementById("dd-close").click();
+  await loadRounds(currentRound);
+  loadSummary();
+};
+document.getElementById("dd-remove-from-round").onclick = async () => {
+  if (!currentDrilldownId) return;
+  if (!confirm("Remove this match from its round? It stays monitored and keeps all its data - it just moves to the (unlabeled) bucket.")) return;
+  await api(`/matches/${currentDrilldownId}/remove-from-round`, { method: "PATCH" });
   document.getElementById("dd-close").click();
   await loadRounds(currentRound);
   loadSummary();
