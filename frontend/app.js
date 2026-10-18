@@ -119,6 +119,64 @@ function toSeriesData(rows, valueField, timeField = "captured_at") {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Betslip cutoff markers - rounds span Saturday and Sunday, so each match's
+// own "latest" reading keeps moving at a different pace. These mark what a
+// match's series actually read 10 minutes before the round's two real
+// decision points (earliest kickoff overall = Saturday betslip lock-in;
+// earliest Sunday kickoff = the separate Sunday-only jackpot's lock-in),
+// so post-match review compares what was actually known at those moments,
+// not each match's own end-of-history point.
+// ---------------------------------------------------------------------------
+const CUTOFF_COLOR = { saturday: "#ffffff", sunday: "#5ac8fa" };
+const CUTOFF_LABEL = { saturday: "Sat", sunday: "Sun" };
+
+function valueAtOrBefore(rows, cutoffIso, field, timeField = "captured_at") {
+  if (!cutoffIso) return null;
+  const cutoffMs = new Date(cutoffIso).getTime();
+  let best = null;
+  for (const r of rows) {
+    if (r[field] === null || r[field] === undefined) continue;
+    const t = new Date(r[timeField]).getTime();
+    if (t <= cutoffMs && (!best || t > new Date(best[timeField]).getTime())) best = r;
+  }
+  return best ? best[field] : null;
+}
+
+function cutoffMarkers(rows, field, cutoffs, valueFmt, timeField = "captured_at") {
+  if (!cutoffs) return [];
+  const markers = [];
+  for (const key of ["saturday", "sunday"]) {
+    const iso = cutoffs[key];
+    if (!iso) continue;
+    const val = valueAtOrBefore(rows, iso, field, timeField);
+    if (val === null) continue;
+    markers.push({
+      time: toUnixSeconds(iso),
+      position: "aboveBar",
+      color: CUTOFF_COLOR[key],
+      shape: "circle",
+      text: `${CUTOFF_LABEL[key]} ${valueFmt ? valueFmt(val) : val}`,
+    });
+  }
+  markers.sort((a, b) => a.time - b.time);
+  return markers;
+}
+
+function renderCutoffNote(cutoffs) {
+  const el = document.getElementById("cutoff-note");
+  if (!el) return;
+  if (!cutoffs || (!cutoffs.saturday && !cutoffs.sunday)) {
+    el.innerHTML = "";
+    return;
+  }
+  const fmt = (iso) => (iso ? new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null);
+  const parts = [];
+  if (cutoffs.saturday) parts.push(`<span class="swatch"><span class="dot" style="background:${CUTOFF_COLOR.saturday}"></span>Sat betslip cutoff — ${fmt(cutoffs.saturday)}</span>`);
+  if (cutoffs.sunday) parts.push(`<span class="swatch"><span class="dot" style="background:${CUTOFF_COLOR.sunday}"></span>Sun betslip cutoff — ${fmt(cutoffs.sunday)}</span>`);
+  el.innerHTML = parts.join("");
+}
+
 async function api(path, options) {
   const res = await fetch(`${API}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -544,11 +602,16 @@ function renderCharts(detail) {
   const tot = detail.series.total_main;
   const home = detail.matchup.home_team;
   const away = detail.matchup.away_team;
+  const cutoffs = detail.betslip_cutoffs;
+  renderCutoffNote(cutoffs);
+  const pctFmt = (v) => `${(v * 100).toFixed(1)}%`;
+  const numFmt = (v) => Number(v).toFixed(2);
 
   const c1 = makeChart("chart-1x2-prob");
-  lineOn(c1, toSeriesData(ml, "fair_home_prob").map((d) => ({ ...d, value: d.value * 100 })), COLOR_HOME);
+  const s1h = lineOn(c1, toSeriesData(ml, "fair_home_prob").map((d) => ({ ...d, value: d.value * 100 })), COLOR_HOME);
   lineOn(c1, toSeriesData(ml, "fair_draw_prob").map((d) => ({ ...d, value: d.value * 100 })), COLOR_DRAW);
   lineOn(c1, toSeriesData(ml, "fair_away_prob").map((d) => ({ ...d, value: d.value * 100 })), COLOR_AWAY);
+  s1h.setMarkers(cutoffMarkers(ml, "fair_home_prob", cutoffs, pctFmt));
   setLegend("legend-1x2-prob", [
     { color: COLOR_HOME, label: `${home} (Home)` },
     { color: COLOR_DRAW, label: "Draw" },
@@ -556,9 +619,10 @@ function renderCharts(detail) {
   ]);
 
   const c2 = makeChart("chart-1x2-odds");
-  lineOn(c2, toSeriesData(ml, "home_price"), COLOR_HOME);
+  const s2h = lineOn(c2, toSeriesData(ml, "home_price"), COLOR_HOME);
   lineOn(c2, toSeriesData(ml, "draw_price"), COLOR_DRAW);
   lineOn(c2, toSeriesData(ml, "away_price"), COLOR_AWAY);
+  s2h.setMarkers(cutoffMarkers(ml, "home_price", cutoffs, numFmt));
   setLegend("legend-1x2-odds", [
     { color: COLOR_HOME, label: `${home} (Home)` },
     { color: COLOR_DRAW, label: "Draw" },
@@ -566,30 +630,35 @@ function renderCharts(detail) {
   ]);
 
   const c3 = makeChart("chart-1x2-limit");
-  lineOn(c3, toSeriesData(ml, "limit_amount"), COLOR_HOME);
+  const s3 = lineOn(c3, toSeriesData(ml, "limit_amount"), COLOR_HOME);
+  s3.setMarkers(cutoffMarkers(ml, "limit_amount", cutoffs, (v) => Math.round(v)));
   setLegend("legend-1x2-limit", [{ color: COLOR_HOME, label: "1X2 market limit ($)" }]);
 
   const c4 = makeChart("chart-ah-line");
-  lineOn(c4, toSeriesData(sp, "home_points"), COLOR_LINE);
+  const s4 = lineOn(c4, toSeriesData(sp, "home_points"), COLOR_LINE);
+  s4.setMarkers(cutoffMarkers(sp, "home_points", cutoffs, numFmt));
   setLegend("legend-ah-line", [{ color: COLOR_LINE, label: `${home} handicap (points)` }]);
 
   const c5 = makeChart("chart-ah-prob");
-  lineOn(c5, toSeriesData(sp, "fair_home_prob").map((d) => ({ ...d, value: d.value * 100 })), COLOR_HOME);
+  const s5h = lineOn(c5, toSeriesData(sp, "fair_home_prob").map((d) => ({ ...d, value: d.value * 100 })), COLOR_HOME);
   lineOn(c5, toSeriesData(sp, "fair_away_prob").map((d) => ({ ...d, value: d.value * 100 })), COLOR_AWAY);
+  s5h.setMarkers(cutoffMarkers(sp, "fair_home_prob", cutoffs, pctFmt));
   setLegend("legend-ah-prob", [
     { color: COLOR_HOME, label: `${home} (Home)` },
     { color: COLOR_AWAY, label: `${away} (Away)` },
   ]);
 
   const c6 = makeChart("chart-ah-limit");
-  lineOn(c6, toSeriesData(sp, "limit_amount"), COLOR_LINE);
+  const s6 = lineOn(c6, toSeriesData(sp, "limit_amount"), COLOR_LINE);
+  s6.setMarkers(cutoffMarkers(sp, "limit_amount", cutoffs, (v) => Math.round(v)));
   setLegend("legend-ah-limit", [{ color: COLOR_LINE, label: "AH market limit ($)" }]);
 
   const c7 = makeChart("chart-total");
-  lineOn(c7, toSeriesData(tot, "home_points"), COLOR_LINE, { priceScaleId: "left" });
+  const s7line = lineOn(c7, toSeriesData(tot, "home_points"), COLOR_LINE, { priceScaleId: "left" });
   c7.priceScale("left").applyOptions({ visible: true });
   lineOn(c7, toSeriesData(tot, "home_price"), COLOR_HOME); // "home" slot = Over, see ingest.py normalize_market
   lineOn(c7, toSeriesData(tot, "away_price"), COLOR_AWAY); // "away" slot = Under
+  s7line.setMarkers(cutoffMarkers(tot, "home_points", cutoffs, numFmt));
   setLegend("legend-total", [
     { color: COLOR_LINE, label: "Goal total line (left axis)" },
     { color: COLOR_HOME, label: "Over odds (right axis)" },
@@ -597,15 +666,17 @@ function renderCharts(detail) {
   ]);
 
   const c7b = makeChart("chart-total-prob");
-  lineOn(c7b, toSeriesData(tot, "fair_home_prob").map((d) => ({ ...d, value: d.value * 100 })), COLOR_HOME);
+  const s7bh = lineOn(c7b, toSeriesData(tot, "fair_home_prob").map((d) => ({ ...d, value: d.value * 100 })), COLOR_HOME);
   lineOn(c7b, toSeriesData(tot, "fair_away_prob").map((d) => ({ ...d, value: d.value * 100 })), COLOR_AWAY);
+  s7bh.setMarkers(cutoffMarkers(tot, "fair_home_prob", cutoffs, pctFmt));
   setLegend("legend-total-prob", [
     { color: COLOR_HOME, label: "Over (de-vigged %)" },
     { color: COLOR_AWAY, label: "Under (de-vigged %)" },
   ]);
 
   const c8 = makeChart("chart-score");
-  lineOn(c8, toSeriesData(detail.score_history, "total_score", "computed_at"), COLOR_HOME);
+  const s8 = lineOn(c8, toSeriesData(detail.score_history, "total_score", "computed_at"), COLOR_HOME);
+  s8.setMarkers(cutoffMarkers(detail.score_history, "total_score", cutoffs, numFmt, "computed_at"));
   setLegend("legend-score", [{ color: COLOR_HOME, label: "Composite score (0–10)" }]);
 }
 

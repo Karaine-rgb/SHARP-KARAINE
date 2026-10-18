@@ -4,7 +4,7 @@ from __future__ import annotations
 import csv
 import io
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
@@ -309,6 +309,40 @@ async def match_detail(matchup_id: int):
     if not matchup:
         raise HTTPException(status_code=404, detail="Match not found")
 
+    # Megajackpot rounds span Saturday and Sunday, so each match's own
+    # "latest" reading is a moving target - a Sunday match simply gets more
+    # time to move than a Saturday one, which makes them impossible to
+    # compare for post-match review. Instead, surface what every match in
+    # the round looked like 10 minutes before the actual betslip lock-in
+    # moments: the round's earliest kickoff overall (always the first
+    # Saturday match, hence "saturday_cutoff") and, separately, the
+    # earliest kickoff among just the Sunday matches (the deadline for a
+    # separate Sunday-only jackpot entry). Both are computed round-wide,
+    # not per-match, so every match in the round shares the same two
+    # reference points. Day-of-week is read in UTC (extract(dow from ...)),
+    # same as every other timestamp this app stores - fine for the handful
+    # of hours either side of midnight this could theoretically misclassify,
+    # not worth a timezone-aware rewrite for.
+    round_label = matchup["mjp_round_label"]
+    if round_label is None:
+        round_condition, round_params = "mjp_round_label is null", []
+    else:
+        round_condition, round_params = "mjp_round_label = $1", [round_label]
+    cutoff_row = await db.fetchrow(
+        f"""
+        select
+            min(start_time) as earliest_overall,
+            min(start_time) filter (where extract(dow from start_time) = 0) as earliest_sunday
+        from matchups
+        where {round_condition}
+        """,
+        *round_params,
+    )
+    betslip_cutoffs = {
+        "saturday": (cutoff_row["earliest_overall"] - timedelta(minutes=10)) if cutoff_row["earliest_overall"] else None,
+        "sunday": (cutoff_row["earliest_sunday"] - timedelta(minutes=10)) if cutoff_row["earliest_sunday"] else None,
+    }
+
     latest_score = await db.fetchrow(
         "select * from match_scores where matchup_id = $1 order by computed_at desc limit 1",
         matchup_id,
@@ -402,6 +436,7 @@ async def match_detail(matchup_id: int):
         "latest_signals": signals_by_type,
         "velocity_transitions": velocity_transitions,
         "x2_transitions": x2_transitions,
+        "betslip_cutoffs": betslip_cutoffs,
         "series": {
             "moneyline_main": series["moneyline"],
             "spread_main": series["spread"],
