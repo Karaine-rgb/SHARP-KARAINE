@@ -50,11 +50,16 @@ document.getElementById("round-select").onchange = async (e) => {
 };
 
 document.getElementById("btn-rename-round").onclick = async () => {
-  if (!currentRound || currentRound === "(unlabeled)") {
-    alert("Select a real round first - the (unlabeled) bucket isn't a round that can be renamed.");
+  if (!currentRound) {
+    alert("Select a round first.");
     return;
   }
-  const newName = prompt("New name for this round:", currentRound);
+  // Renaming (unlabeled) only relabels the matches sitting in it right
+  // now - any match removed from a round afterwards still lands back in
+  // a fresh (unlabeled) bucket, so pre-filling with that literal text
+  // would be misleading rather than helpful.
+  const promptDefault = currentRound === "(unlabeled)" ? "" : currentRound;
+  const newName = prompt("New name for this round:", promptDefault);
   if (!newName || !newName.trim() || newName.trim() === currentRound) return;
   await api("/rounds/rename", {
     method: "PATCH",

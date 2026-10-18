@@ -198,20 +198,32 @@ async def rename_round(body: RoundRename):
     """Renames a round across every match carrying that label. Takes the
     labels in the request body rather than the URL path since round labels
     are free text and can contain spaces/slashes that don't belong in a
-    path segment."""
+    path segment.
+
+    old_label == "(unlabeled)" is allowed: it renames every match that
+    currently has a null mjp_round_label (a snapshot of what's unlabeled
+    right now). "(unlabeled)" itself stays reserved as the sentinel for
+    null - any match removed from a round afterwards (mjp_round_label set
+    back to null) still lands back under "(unlabeled)" automatically,
+    since /rounds groups by coalesce(mjp_round_label, '(unlabeled)')
+    regardless of what a past batch of nulls got renamed to.
+    """
     new_label = body.new_label.strip()
     if not new_label:
         raise HTTPException(status_code=400, detail="New round name can't be empty")
-    if body.old_label == "(unlabeled)":
+    if new_label == "(unlabeled)":
         raise HTTPException(
             status_code=400,
-            detail="The (unlabeled) bucket isn't a real round - move matches into a round individually instead",
+            detail="(unlabeled) is reserved for matches with no round - pick a different name",
         )
-    await db.execute(
-        "update matchups set mjp_round_label = $1 where mjp_round_label = $2",
-        new_label,
-        body.old_label,
-    )
+    if body.old_label == "(unlabeled)":
+        await db.execute("update matchups set mjp_round_label = $1 where mjp_round_label is null", new_label)
+    else:
+        await db.execute(
+            "update matchups set mjp_round_label = $1 where mjp_round_label = $2",
+            new_label,
+            body.old_label,
+        )
     return {"ok": True}
 
 
