@@ -64,6 +64,8 @@ body {
   font-size: 12px;
   cursor: pointer;
   border-radius: 3px;
+  display: inline-block;
+  text-decoration: none;
 }
 .btn:hover { border-color: var(--accent); color: var(--accent); }
 .btn-ghost { background: transparent; }
