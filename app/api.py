@@ -1,9 +1,11 @@
 """REST + WebSocket API."""
 from __future__ import annotations
 
+import csv
+import io
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from app import db
@@ -200,6 +202,30 @@ async def list_rounds():
         """
     )
     return [dict(r) for r in rows]
+
+
+@router.get("/export/match-snapshots.csv")
+async def export_match_snapshots_csv():
+    """One complete, download-ready file for backtesting: every raw market
+    snapshot ever collected, joined to the match it belongs to and the real
+    final score - the same data as the match_snapshots_export view, but
+    served directly by the app so a phone browser just downloads it with
+    one tap, no Supabase Table Editor involved (which warns against
+    exporting a view directly on anything large). Queried once here, not
+    through the view, so Supabase's own warning about live view-browsing
+    doesn't apply - this is a single, one-shot query.
+    """
+    rows = await db.fetch("select * from match_snapshots_export")
+    buffer = io.StringIO()
+    if rows:
+        writer = csv.DictWriter(buffer, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(dict(r) for r in rows)
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=match_snapshots_export.csv"},
+    )
 
 
 @router.get("/matches/summary")
