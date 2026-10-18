@@ -50,6 +50,30 @@ document.getElementById("round-select").onchange = async (e) => {
 };
 
 // ---------------------------------------------------------------------------
+// Download (one CSV per round, or everything, for backtesting elsewhere)
+// ---------------------------------------------------------------------------
+
+async function loadDownloadRounds() {
+  const rounds = await api("/rounds");
+  const select = document.getElementById("download-round-select");
+  select.innerHTML =
+    `<option value="">All rounds (one big file)</option>` +
+    rounds.map((r) => `<option value="${r.round_label}">${r.round_label} — ${r.match_count} matches</option>`).join("");
+  updateDownloadHref();
+}
+
+function updateDownloadHref() {
+  const select = document.getElementById("download-round-select");
+  const link = document.getElementById("btn-download-data");
+  const roundLabel = select.value;
+  link.href = roundLabel
+    ? `/api/export/match-snapshots.csv?round_label=${encodeURIComponent(roundLabel)}`
+    : "/api/export/match-snapshots.csv";
+}
+
+document.getElementById("download-round-select").onchange = updateDownloadHref;
+
+// ---------------------------------------------------------------------------
 // Utilities
 // ---------------------------------------------------------------------------
 
@@ -668,6 +692,7 @@ function connectWs() {
 async function init() {
   await loadRounds();
   await loadSummary();
+  await loadDownloadRounds();
   connectWs();
   setInterval(loadSummary, 30000);
   setInterval(tickCountdowns, 1000);

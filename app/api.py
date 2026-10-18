@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Response, WebSocket, WebSocketDisconnect
@@ -205,7 +206,7 @@ async def list_rounds():
 
 
 @router.get("/export/match-snapshots.csv")
-async def export_match_snapshots_csv():
+async def export_match_snapshots_csv(round_label: str | None = None):
     """One complete, download-ready file for backtesting: every raw market
     snapshot ever collected, joined to the match it belongs to and the real
     final score - the same data as the match_snapshots_export view, but
@@ -214,17 +215,35 @@ async def export_match_snapshots_csv():
     exporting a view directly on anything large). Queried once here, not
     through the view, so Supabase's own warning about live view-browsing
     doesn't apply - this is a single, one-shot query.
+
+    Optional round_label splits the export into one file per round
+    (match_snapshots_export already carries mjp_round_label on every row) -
+    mainly so a round's worth of data stays small enough to upload
+    somewhere with a strict file-size limit, instead of one ever-growing
+    file covering every round ever tracked. No round_label still returns
+    everything. "(unlabeled)" means matches with a null round, matching
+    the same convention /matches/summary already uses.
     """
-    rows = await db.fetch("select * from match_snapshots_export")
+    if round_label is None:
+        condition, params = "true", []
+    elif round_label == "(unlabeled)":
+        condition, params = "mjp_round_label is null", []
+    else:
+        condition, params = "mjp_round_label = $1", [round_label]
+
+    rows = await db.fetch(f"select * from match_snapshots_export where {condition}", *params)
     buffer = io.StringIO()
     if rows:
         writer = csv.DictWriter(buffer, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(dict(r) for r in rows)
+
+    safe_suffix = re.sub(r"[^A-Za-z0-9_-]+", "_", round_label).strip("_") if round_label else "all"
+    filename = f"match_snapshots_{safe_suffix}.csv"
     return Response(
         content=buffer.getvalue(),
         media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=match_snapshots_export.csv"},
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 

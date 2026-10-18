@@ -88,6 +88,12 @@ main { padding: 16px 20px; overflow-x: auto; }
   padding: 4px 8px; font-family: var(--mono); font-size: 12px; border-radius: 3px; margin-left: 6px;
 }
 
+.download-group { display: flex; align-items: center; gap: 6px; }
+.download-group select {
+  background: var(--bg-elevated); color: var(--text); border: 1px solid var(--border);
+  padding: 6px 8px; font-family: var(--mono); font-size: 12px; border-radius: 3px;
+}
+
 table { width: 100%; border-collapse: collapse; }
 th, td {
   text-align: left;
