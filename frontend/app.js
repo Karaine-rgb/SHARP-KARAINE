@@ -66,10 +66,12 @@ function renderHistoryDropdown(transitions) {
   const entries = (transitions || []).filter((t) => t.label);
   if (entries.length === 0) return "";
   const rows = entries
-    .map(
-      (t) =>
-        `<li>${new Date(t.at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} — ${t.label}</li>`
-    )
+    .map((t) => {
+      const when = new Date(t.at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+      const side = t.side ? ` (${t.side})` : "";
+      const pp = t.change_pp != null ? `, ${fmtPp(t.change_pp)}` : "";
+      return `<li>${when} — ${t.label}${side}${pp}</li>`;
+    })
     .join("");
   return `<details class="history-dropdown"><summary>History (${entries.length})</summary><ol>${rows}</ol></details>`;
 }

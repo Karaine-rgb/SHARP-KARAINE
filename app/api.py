@@ -291,7 +291,7 @@ async def match_detail(matchup_id: int):
     async def _label_transitions(signal_type: str) -> list[dict]:
         rows = await db.fetch(
             """
-            select computed_at, direction as label from signals
+            select computed_at, direction as label, detail_json from signals
             where matchup_id = $1 and signal_type = $2
             order by computed_at asc
             """,
@@ -302,7 +302,17 @@ async def match_detail(matchup_id: int):
         last_label = None
         for r in rows:
             if r["label"] != last_label:
-                transitions.append({"at": r["computed_at"], "label": r["label"]})
+                detail = db.from_jsonb(r["detail_json"]) or {}
+                # velocity_shape's detail carries "side" and "total_change_pp";
+                # x2_displacement has neither (its label already IS the side) -
+                # both are safely None/absent there, the frontend only shows
+                # what's present.
+                transitions.append({
+                    "at": r["computed_at"],
+                    "label": r["label"],
+                    "side": detail.get("side"),
+                    "change_pp": detail.get("total_change_pp"),
+                })
                 last_label = r["label"]
         return transitions
 
