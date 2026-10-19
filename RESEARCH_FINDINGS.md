@@ -93,7 +93,46 @@ came back close to a coin flip. That's not a failure of testing; it's a
 real, repeatedly-confirmed answer about this specific market at this
 scale of data (currently ~115 real matches across 5 rounds).
 
-## 4. Open threads, if more data or time becomes available
+## 4. Does Pinnacle move only when sharp money hits their lines?
+
+**No - not exclusively.** This is worth separating into two different
+mechanisms that get lumped together as "the market moving":
+
+- **Lines do need real action to move, but that action isn't reliably
+  "sharp."** The mechanical link is real (see the probability-pressure
+  finding above, 74.8-86.5%) - something real is pushing lines, not
+  randomness. But if that something were genuinely sharp (informed, right
+  more often than wrong), the direction of that pressure should predict
+  the match result clearly better than a coin flip. It doesn't - every
+  "follow the money" signal tested landed around 50-54%. The money moving
+  these lines is a mix of things - some informed, a lot of ordinary larger
+  recreational bets, team news settling in, general consensus forming -
+  not something that earns the label "sharp" just because it moved the
+  price.
+- **Limits are a different mechanism, and there's direct evidence they
+  mostly aren't money-triggered at all.** Only 24.3% of limit increases
+  happened alongside any real probability movement (see section 2). The
+  rest look scheduled - clustered overwhelmingly close to kickoff, moving
+  through the same fixed round-number tiers match after match. That's
+  what a routine operational ramp-up looks like, not a sharp-money
+  detector - directly contradicting the idea (proposed in the external
+  research document that prompted this check) that a rising limit
+  specifically signals detected sharp participation.
+- **A large share of matches get no action at all.** 42 of 115 (about
+  37%) never saw their line move once all week. If sharp money reliably
+  sought out and corrected every mismatched line, far fewer matches
+  should look like this.
+
+**Bottom line:** Pinnacle's lines move in response to real betting
+activity, but that activity isn't distinctly "sharp" by any measure
+tested here, and a large share of what looks like "market movement" -
+especially limit changes - is closer to scheduled housekeeping than a
+reaction to informed money. The founding theory of this whole project
+("sharp money moves the line, so tracking line moves tracks sharp
+money") turns out to be only partly true: the moving part is real, the
+sharp part isn't supported by the data.
+
+## 5. Open threads, if more data or time becomes available
 
 - Re-test the "never-moved lines draw more" observation (currently
   33.3% vs 23.3%, a real-looking gap that doesn't yet clear the usual
