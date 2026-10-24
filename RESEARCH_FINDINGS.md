@@ -33,6 +33,8 @@ proven.
 | "Banker" rule (strong 1X2 favorite + low draw risk) | 83.3% but only n=6 matches | Promising, unproven - too small to trust |
 | Deployed tool's own confidence score (`total_score`) | Wrong picks averaged a *higher* score (8.0) than right picks (7.35) | Miscalibrated |
 | Betslip generator (primary pick + draw-cover) | Barely beat "just cover every match with the draw" (68.4% vs 69.4%) | Not worth the complexity as built |
+| "Steam" via the existing ratio-based classifier (`velocity_shape`, recent-vs-total change ratio) | 41.7% (n=48) - statistically indistinguishable from drift (41.2%), building (41.4%), and the 40.0% baseline | Rejected at full scale (an earlier 70-100% reading was from 2-5 decisive matches per label - noise) |
+| "Steam" via rolling Z-score anomaly detection (own price vs its recent rolling mean/stdev, floored to avoid division-by-near-zero) | 34-37% accuracy across every threshold tried (1.5 to 4.0) - below the 40% baseline at every single threshold | Rejected |
 
 ## 2. What we know for certain about the market's mechanics
 
@@ -132,7 +134,36 @@ reaction to informed money. The founding theory of this whole project
 money") turns out to be only partly true: the moving part is real, the
 sharp part isn't supported by the data.
 
-## 5. Open threads, if more data or time becomes available
+## 5. Single-book "steam" detection - tried three ways, closed as a dead end
+
+Without a second bookmaker to confirm cross-book contagion (the usual way
+"steam" gets validated - multiple books reacting in sync), the remaining
+option was to try to extract steam purely from Pinnacle's own price
+velocity. Three independent mathematical approaches were tried on the
+full 115-match dataset, and all three converged on the same answer:
+
+1. **CUSUM change-detection** (tried earlier in this project) - underperformed
+   baseline on real data.
+2. **Ratio-based steam/drift/building classifier** - already built into
+   `velocity_shape()`, never fully re-tested until now. 41.7% accuracy for
+   "steam," statistically identical to every other label and to the 40%
+   baseline.
+3. **Rolling Z-score anomaly detection** (the PDF's proposed method) - after
+   fixing a real bug in the first pass (a flat/quiet stretch could drive
+   the rolling standard deviation toward zero and blow up a meaningless
+   tiny move into a fake 286-sigma "anomaly"; fixed with a floor on the
+   standard deviation matching the project's existing 0.30pp noise floor),
+   the corrected version still scored 34-37% across every threshold tried
+   - *below* the baseline every time, not just even with it.
+
+**Conclusion: three different, independent methods for finding "steam" in
+Pinnacle's own data, with no second book to confirm it, all failed the
+same way.** That's a pattern, not a coincidence. Single-book steam
+detection is not a productive direction with the data and tools available
+right now - closing this line of investigation rather than trying further
+variants of the same underlying idea.
+
+## 6. Open threads, if more data or time becomes available
 
 - Re-test the "never-moved lines draw more" observation (currently
   33.3% vs 23.3%, a real-looking gap that doesn't yet clear the usual
