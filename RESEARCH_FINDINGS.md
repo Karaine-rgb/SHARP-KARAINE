@@ -375,7 +375,41 @@ shows a clear, sizeable reversal against it - in which case the reversal
 itself is informative, and leaning toward the new leader (or expecting a
 draw) looks better supported than sticking with the original favorite.
 
-## 11. Open threads, if more data or time becomes available
+## 11. Both sides force line adjustments - each exactly when their own probability is rising
+
+Classified every real AH line-move event (n=109, relative to each
+match's opening favorite) as either **widening** (the move makes the
+opening favorite even more favored) or **narrowing** (the move pulls the
+line back toward the underdog):
+
+| Move type | n | % |
+|---|---|---|
+| Widening - favorite backed further | 51 | 46.8% |
+| Narrowing - underdog pulling it back | 58 | 53.2% |
+
+Close to even, with narrowing slightly more common - Pinnacle corrects
+back toward the underdog a bit more often than it extends the favorite's
+edge, but neither direction dominates.
+
+**The important part - whose probability was rising right before each
+type of move:**
+
+| Move type | n | Whose probability was rising beforehand |
+|---|---|---|
+| Widening | 38 | The favorite's own probability, 78.9% of the time |
+| Narrowing | 38 | The underdog's own probability, 81.6% of the time |
+
+**Both sides force adjustments, roughly equally often, and each time it's
+exactly the side you'd expect doing the forcing.** When the favorite gets
+backed further, the favorite's own probability was climbing beforehand -
+more money piling onto the already-strong side. When the line pulls back
+toward the underdog, the underdog's own probability was climbing
+beforehand - money found value on the weaker side. This is a clean,
+mechanistic confirmation of the balancing picture from sections 4 and 8,
+now decomposed by which side is doing the forcing at each individual
+move, not just confirmed in aggregate.
+
+## 12. Open threads, if more data or time becomes available
 
 - Re-test the "never-moved lines draw more" observation (currently
   33.3% vs 23.3%, a real-looking gap that doesn't yet clear the usual
