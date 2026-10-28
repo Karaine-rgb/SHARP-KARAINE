@@ -9,6 +9,7 @@ from app.signals import (
     compute_match_score,
     data_sufficiency,
     detect_contested,
+    favorite_strength,
     limit_drop_pct,
     velocity_shape,
     x2_displacement,
@@ -69,6 +70,42 @@ def test_ah_line_shift_insufficient_data():
     result = ah_line_shift([])
     assert result["direction"] is None
     assert result["magnitude"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# favorite_strength
+# ---------------------------------------------------------------------------
+
+def test_favorite_strength_home_favored_uses_opening_1x2_prob():
+    sp = [sp_point(48, -0.5), sp_point(1, -1.0)]  # line moves, opening is what counts
+    ml = [ml_point(48, 0.55, 0.25, 0.20), ml_point(1, 0.70, 0.15, 0.15)]
+    result = favorite_strength(sp, ml)
+    assert result["favorite"] == "home"
+    assert result["opening_line"] == -0.5
+    assert result["favorite_prob"] == pytest.approx(55.0)  # opening, not current/final
+
+
+def test_favorite_strength_away_favored():
+    sp = [sp_point(48, 0.25)]
+    ml = [ml_point(48, 0.40, 0.25, 0.35)]
+    result = favorite_strength(sp, ml)
+    assert result["favorite"] == "away"
+    assert result["favorite_prob"] == pytest.approx(35.0)
+
+
+def test_favorite_strength_pick_em_has_no_favorite():
+    sp = [sp_point(48, 0.0)]
+    ml = [ml_point(48, 0.38, 0.27, 0.35)]
+    result = favorite_strength(sp, ml)
+    assert result["favorite"] is None
+    assert result["favorite_prob"] is None
+
+
+def test_favorite_strength_no_spread_data():
+    result = favorite_strength([], [ml_point(48, 0.5, 0.3, 0.2)])
+    assert result["favorite"] is None
+    assert result["opening_line"] is None
+    assert result["favorite_prob"] is None
 
 
 # ---------------------------------------------------------------------------

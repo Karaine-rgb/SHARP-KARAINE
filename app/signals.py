@@ -98,6 +98,44 @@ def ah_line_shift(spread_series: list[dict]) -> dict:
     return {"opening": opening, "current": current, "shift": shift, "magnitude": abs(shift), "direction": direction}
 
 
+def favorite_strength(spread_series: list[dict], moneyline_series: list[dict]) -> dict:
+    """Identifies the favorite from the OPENING Asian Handicap line - before
+    any money has landed - and estimates how strong that favorite actually
+    is using the OPENING 1X2 fair probability for that same side, not the
+    AH probability. The AH probability stays pinned near 50% regardless of
+    how big the line is (it's the line's whole job to keep the covering
+    probability close to a coin flip no matter the real quality gap), so it
+    can't measure strength on its own - the 1X2 market can.
+
+    Backtested against 115 real matches: the opening line's favorite won
+    68.1% of non-draw matches, strengthening with the size of the line
+    (50% at n=18 for +-0.5pt+, 80% at n=5 for +-1.0pt+). The 1X2 probability
+    tracks the line size cleanly (pick'em ~38%, 0.25pt ~42%, 0.50pt ~48%,
+    0.75-1.00pt ~60-63%, 1.50pt+ ~71%), and a stronger 1X2 reading makes the
+    favorite more reliable too (50% at >=50%, 80% at >=60%, n=5). Samples
+    past the 0.5pt / 50% mark are thin (single digits) - this is an early,
+    directional read, not a precisely calibrated one. See
+    RESEARCH_FINDINGS.md sections 6, 7 and 9 for the full backtest.
+    """
+    opening_points, _ = _first_last(spread_series, "home_points")
+    if opening_points is None:
+        return {"favorite": None, "opening_line": None, "favorite_prob": None}
+
+    if opening_points < 0:
+        favorite = "home"
+    elif opening_points > 0:
+        favorite = "away"
+    else:
+        favorite = None
+
+    favorite_prob = None
+    if favorite is not None:
+        opening_prob, _ = _first_last(moneyline_series, f"fair_{favorite}_prob")
+        favorite_prob = opening_prob * 100.0 if opening_prob is not None else None
+
+    return {"favorite": favorite, "opening_line": opening_points, "favorite_prob": favorite_prob}
+
+
 def x2_displacement(moneyline_series: list[dict]) -> dict:
     """moneyline_series: chronological list of
     {captured_at, fair_home_prob, fair_draw_prob, fair_away_prob, status}.
@@ -400,6 +438,7 @@ def compute_match_score(
             "contested": False,
             "ah": ah_line_shift(spread_series),
             "x2": x2_displacement(moneyline_series),
+            "favorite_strength": favorite_strength(spread_series, moneyline_series),
             "velocity": velocity_shape(moneyline_series),
             "moneyline_limit_drop_pct": limit_drop_pct(moneyline_series),
             "spread_limit_drop_pct": limit_drop_pct(spread_series),
@@ -478,6 +517,7 @@ def compute_match_score(
         "contested": contested,
         "ah": ah,
         "x2": x2,
+        "favorite_strength": favorite_strength(spread_series, moneyline_series),
         "velocity": velocity_shape(moneyline_series),
         "moneyline_limit_drop_pct": ml_limit_drop,
         "spread_limit_drop_pct": sp_limit_drop,
@@ -541,7 +581,8 @@ async def compute_and_store_score(matchup_id: int, kickoff: datetime) -> dict:
         values ($1,'ah_line_shift',$2,$3,$4::jsonb),
                ($1,'x2_displacement',$5,$6,$7::jsonb),
                ($1,'limit_movement',$8,$9,$10::jsonb),
-               ($1,'velocity_shape',$11,$12,$13::jsonb)
+               ($1,'velocity_shape',$11,$12,$13::jsonb),
+               ($1,'favorite_strength',$14,$15,$16::jsonb)
         """,
         matchup_id,
         result["ah"]["direction"],
@@ -564,5 +605,11 @@ async def compute_and_store_score(matchup_id: int, kickoff: datetime) -> dict:
         result["velocity"]["label"],
         abs(result["velocity"]["total_change_pp"]),
         db.to_jsonb(result["velocity"]),
+        # direction = the favorite side (home/away/None - pick'em), magnitude
+        # = the 1X2 probability backing that read, fixed at the opening and
+        # never re-derived, unlike every other signal here.
+        result["favorite_strength"]["favorite"],
+        result["favorite_strength"]["favorite_prob"] or 0.0,
+        db.to_jsonb(result["favorite_strength"]),
     )
     return result

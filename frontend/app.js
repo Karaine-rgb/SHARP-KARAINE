@@ -517,6 +517,9 @@ function renderCards(detail) {
   const x2 = sig.x2_displacement?.detail_json || {};
   const lim = sig.limit_movement?.detail_json || {};
   const vel = sig.velocity_shape?.detail_json || {};
+  const fav = sig.favorite_strength?.detail_json || {};
+  const favTeamName = fav.favorite === "home" ? detail.matchup.home_team
+    : fav.favorite === "away" ? detail.matchup.away_team : null;
   const velLabels = {
     steam: "Steam — fast, recent move",
     drift: "Drift — old move, gone quiet",
@@ -543,6 +546,12 @@ function renderCards(detail) {
       <h4>Sharp side</h4>
       <div class="value">${s.sharp_side || "—"}</div>
       <div class="sub">${s.contested ? "Contested: early vs late-window direction disagree" : ""}</div>
+    </div>
+    <div class="card card-experimental">
+      <h4>Favorite <span class="pill-experimental">early read</span></h4>
+      <div class="value">${favTeamName ? `${favTeamName} (${fav.favorite})` : "Pick'em — no favorite"}</div>
+      <div class="sub">${fav.opening_line != null ? `opening AH line ${fmtNum(fav.opening_line)}` : "—"}${fav.favorite_prob != null ? ` · ${fmtPct(fav.favorite_prob)} win prob (1X2, at open)` : ""}</div>
+      <div class="sub">Backtested on 115 real matches: right 68.1% of non-draw matches, improving with a bigger line - see RESEARCH_FINDINGS.md</div>
     </div>
     <div class="card">
       <h4>AH line shift</h4>
