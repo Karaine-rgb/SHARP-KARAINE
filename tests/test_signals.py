@@ -106,6 +106,33 @@ def test_favorite_strength_no_spread_data():
     assert result["favorite"] is None
     assert result["opening_line"] is None
     assert result["favorite_prob"] is None
+    assert result["lead_change"] is False
+
+
+def test_favorite_strength_lead_change_overrides_opening_favorite():
+    sp = [sp_point(48, -0.25)]  # home favored at the open
+    ml = [
+        ml_point(48, 0.55, 0.15, 0.30),  # home leads at the open
+        ml_point(1, 0.30, 0.15, 0.55),   # away has overtaken by a real margin (25pp)
+    ]
+    result = favorite_strength(sp, ml)
+    assert result["opening_favorite"] == "home"
+    assert result["favorite"] == "away"  # overridden
+    assert result["lead_change"] is True
+    assert result["lead_change_gap_pp"] == pytest.approx(25.0)
+    assert result["favorite_prob"] == pytest.approx(55.0)  # away's CURRENT prob, not home's opening one
+
+
+def test_favorite_strength_lead_change_below_floor_does_not_override():
+    sp = [sp_point(48, -0.25)]
+    ml = [
+        ml_point(48, 0.52, 0.18, 0.30),  # home leads at the open
+        ml_point(1, 0.485, 0.02, 0.495),  # away edges ahead by only 1pp - below the 2pp floor
+    ]
+    result = favorite_strength(sp, ml)
+    assert result["opening_favorite"] == "home"
+    assert result["favorite"] == "home"  # no override - gap too small to trust
+    assert result["lead_change"] is False
 
 
 # ---------------------------------------------------------------------------

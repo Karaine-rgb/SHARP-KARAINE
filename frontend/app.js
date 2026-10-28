@@ -548,10 +548,12 @@ function renderCards(detail) {
       <div class="sub">${s.contested ? "Contested: early vs late-window direction disagree" : ""}</div>
     </div>
     <div class="card card-experimental">
-      <h4>Favorite <span class="pill-experimental">early read</span></h4>
+      <h4>Favorite <span class="pill-experimental">${fav.lead_change ? "hard rule: flipped" : "early read"}</span></h4>
       <div class="value">${favTeamName ? `${favTeamName} (${fav.favorite})` : "Pick'em — no favorite"}</div>
-      <div class="sub">${fav.opening_line != null ? `opening AH line ${fmtNum(fav.opening_line)}` : "—"}${fav.favorite_prob != null ? ` · ${fmtPct(fav.favorite_prob)} win prob (1X2, at open)` : ""}</div>
-      <div class="sub">Backtested on 115 real matches: right 68.1% of non-draw matches, improving with a bigger line - see RESEARCH_FINDINGS.md</div>
+      <div class="sub">${fav.opening_line != null ? `opening AH line ${fmtNum(fav.opening_line)}` : "—"}${fav.favorite_prob != null ? ` · ${fmtPct(fav.favorite_prob)} win prob (1X2, at ${fav.lead_change ? "current" : "open"})` : ""}</div>
+      ${fav.lead_change
+        ? `<div class="sub">⚠ 1X2 lead changed from ${fav.opening_favorite || "pick'em"} by ${fav.lead_change_gap_pp.toFixed(2)}pp - overriding the opening line per the hard rule in RESEARCH_FINDINGS.md section 10</div>`
+        : `<div class="sub">Backtested on 115 real matches: right 68.1% of non-draw matches, improving with a bigger line - see RESEARCH_FINDINGS.md</div>`}
     </div>
     <div class="card">
       <h4>AH line shift</h4>

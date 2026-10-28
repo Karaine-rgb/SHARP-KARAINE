@@ -56,6 +56,13 @@ CONFIG = {
     "velocity_min_window_hours": 0.25,  # 15 min - below this, a window is too short to be meaningful given real poll spacing
     "velocity_steam_ratio": 0.70,
     "velocity_drift_ratio": 0.20,
+    # favorite_strength() hard rule (RESEARCH_FINDINGS.md section 10): how
+    # big the final 1X2 gap must be, in the underdog's favor, before a lead
+    # change overrides the opening-line favorite. Backtested on 20 real
+    # lead-change matches at a sweep of floors (0/1/2/5/10pp); 2.0 keeps
+    # 18 of those 20 while still clearing real noise. Small sample -
+    # trusted here per explicit user direction rather than left watch-only.
+    "lead_change_min_gap_pp": 2.0,
 }
 
 # Rejected: per-league / liquidity-aware thresholds (scaling ah_shift_
@@ -116,24 +123,74 @@ def favorite_strength(spread_series: list[dict], moneyline_series: list[dict]) -
     past the 0.5pt / 50% mark are thin (single digits) - this is an early,
     directional read, not a precisely calibrated one. See
     RESEARCH_FINDINGS.md sections 6, 7 and 9 for the full backtest.
+
+    HARD RULE - lead change override (RESEARCH_FINDINGS.md section 10):
+    if the 1X2 market's own favorite has genuinely flipped by the most
+    recent reading - the underdog's probability has overtaken the original
+    favorite's by at least CONFIG["lead_change_min_gap_pp"] - that reversal
+    overrides the opening-line favorite entirely. Backtested on 20 real
+    lead-change matches: the original favorite's win rate drops from 48.4%
+    (no lead change) to 35.0% (any lead change) to 22.2% once the final gap
+    clears 2pp (n=9) - a small but consistent, strengthening pattern,
+    trusted here per explicit user direction rather than left watch-only.
     """
     opening_points, _ = _first_last(spread_series, "home_points")
     if opening_points is None:
-        return {"favorite": None, "opening_line": None, "favorite_prob": None}
+        return {
+            "favorite": None, "opening_favorite": None, "opening_line": None,
+            "favorite_prob": None, "lead_change": False, "lead_change_gap_pp": None,
+        }
 
     if opening_points < 0:
-        favorite = "home"
+        opening_favorite = "home"
     elif opening_points > 0:
-        favorite = "away"
+        opening_favorite = "away"
     else:
-        favorite = None
+        opening_favorite = None
 
+    opening_home_prob, current_home_prob = _first_last(moneyline_series, "fair_home_prob")
+    opening_away_prob, current_away_prob = _first_last(moneyline_series, "fair_away_prob")
+
+    favorite = opening_favorite
     favorite_prob = None
-    if favorite is not None:
-        opening_prob, _ = _first_last(moneyline_series, f"fair_{favorite}_prob")
-        favorite_prob = opening_prob * 100.0 if opening_prob is not None else None
+    if opening_favorite is not None:
+        opening_fav_prob = opening_home_prob if opening_favorite == "home" else opening_away_prob
+        favorite_prob = opening_fav_prob * 100.0 if opening_fav_prob is not None else None
 
-    return {"favorite": favorite, "opening_line": opening_points, "favorite_prob": favorite_prob}
+    # The backtest behind this rule (section 10) is a PURELY 1X2-internal
+    # before/after comparison - the 1X2 market's own opening favorite vs
+    # its own current leader - independent of what the AH line says. Using
+    # the AH-derived opening_favorite here instead would wrongly fire on a
+    # single-snapshot match where the AH line and 1X2 market simply
+    # disagree from the very start (zero real movement involved) - a
+    # different, untested situation, not the one that was backtested.
+    x2_opening_favorite = None
+    if opening_home_prob is not None and opening_away_prob is not None:
+        x2_opening_favorite = "home" if opening_home_prob > opening_away_prob else "away"
+
+    lead_change = False
+    lead_change_gap_pp = None
+    if (
+        x2_opening_favorite is not None
+        and current_home_prob is not None
+        and current_away_prob is not None
+    ):
+        final_leader = "home" if current_home_prob > current_away_prob else "away"
+        gap_pp = abs(current_home_prob - current_away_prob) * 100.0
+        if final_leader != x2_opening_favorite and gap_pp >= CONFIG["lead_change_min_gap_pp"]:
+            favorite = final_leader
+            favorite_prob = (current_home_prob if final_leader == "home" else current_away_prob) * 100.0
+            lead_change = True
+            lead_change_gap_pp = gap_pp
+
+    return {
+        "favorite": favorite,
+        "opening_favorite": opening_favorite,
+        "opening_line": opening_points,
+        "favorite_prob": favorite_prob,
+        "lead_change": lead_change,
+        "lead_change_gap_pp": lead_change_gap_pp,
+    }
 
 
 def x2_displacement(moneyline_series: list[dict]) -> dict:
