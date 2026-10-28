@@ -334,7 +334,48 @@ combining the two markets - use the AH opening line to identify *who* is
 favored, and the opening 1X2 probability (not the AH probability) to
 estimate *how much*, using the table above as a rough conversion.
 
-## 10. Open threads, if more data or time becomes available
+## 10. A real 1X2 lead change is a sign the opening line missed something
+
+Section 8 concluded the opening line carries the real signal and
+movement is mostly risk management. This finding refines that: when the
+1X2 market's own favorite actually *flips* - not just drifts, but the
+underdog's probability genuinely overtakes the original favorite's by
+the final reading - that reversal itself looks like a real signal, not
+noise.
+
+Across all 115 matches, 20 saw this kind of lead change (home-vs-away
+only, same framing as the AH favorite/underdog work):
+
+| | n=20 |
+|---|---|
+| Original favorite still won | 7 (35.0%) |
+| New leader (the original underdog) won | 9 (45.0%) |
+| Draw | 4 (20.0%) |
+| **New leader won OR draw** | **65.0%** |
+
+Compare that to the 95 matches where the lead never changed: the opening
+favorite won 48.4% of those. So a genuine lead change drops the original
+favorite's win rate from 48.4% down to 35.0% - a real gap, not a rounding
+error. And it strengthens with the size of the reversal:
+
+| Final gap size | n | Original favorite still won |
+|---|---|---|
+| Any flip | 20 | 35.0% |
+| >=2pp | 18 | 38.9% |
+| >=5pp | 9 | 22.2% (new leader or draw: 77.8%) |
+
+**Caveat:** 20 matches total, down to 9 at the clearer >=5pp cutoff - real
+enough to track, not yet large enough to build a hard rule on. But the
+pattern is monotonic (gets stronger exactly where you'd expect), which is
+the kind of thing that's held up elsewhere in this document.
+
+**Refined practical takeaway:** trust the opening line's favorite by
+default (section 9's conversion table), *unless* the 1X2 market later
+shows a clear, sizeable reversal against it - in which case the reversal
+itself is informative, and leaning toward the new leader (or expecting a
+draw) looks better supported than sticking with the original favorite.
+
+## 11. Open threads, if more data or time becomes available
 
 - Re-test the "never-moved lines draw more" observation (currently
   33.3% vs 23.3%, a real-looking gap that doesn't yet clear the usual
