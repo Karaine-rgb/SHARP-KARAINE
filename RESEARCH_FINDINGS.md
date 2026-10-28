@@ -203,7 +203,51 @@ pin down a specific cutoff with confidence. And this has only been
 checked on 115 matches across five rounds - worth re-confirming as more
 data comes in, the same discipline applied to everything else here.
 
-## 7. Open threads, if more data or time becomes available
+## 7. The AH fair probability barely moves regardless of the line's size
+
+Checked every match's final AH reading (one per match, n=115), grouped by
+the exact line value, to see what fair probability actually shows up at
+each one:
+
+| Line | n | Probability range | Median |
+|---|---|---|---|
+| -1.50 (home favored by 1.5) | 1 | 48.0% | 48.0% |
+| -1.00 | 4 | 47.3-51.8% | 49.3% |
+| -0.50 | 9 | 46.0-53.2% | 48.2% |
+| -0.25 | 36 | 44.6-53.3% | 48.6% |
+| 0.00 | 38 | 45.0-53.8% | 49.0% |
+| +0.25 | 19 | 46.8-54.8% | 52.2% |
+| +0.50 | 6 | 50.0-54.7% | 52.9% |
+
+**The probability barely moves from 50% no matter how big the line is.**
+Even at -1.50 (a full goal and a half of head start given to the away
+side), the probability of actually covering that number is still only
+48%. This isn't a data quirk - it's exactly how an Asian Handicap is
+supposed to work: the *point value* captures how much stronger one team
+is; the line itself gets adjusted specifically to keep the probability of
+covering it close to a coin flip, no matter how lopsided the real teams
+are. A bigger quality gap shows up as a bigger point spread, not as a
+probability far from 50%.
+
+**One small, consistent, directional pattern:** home-favored lines
+cluster a touch below 50% (47-49%), home-underdog lines cluster a touch
+above it (51-53%). Best honest explanation: lines only come in
+quarter-point steps, so the true fair number often sits between two
+postable lines, and whichever one actually gets posted will be slightly
+off from a perfect 50/50 in a consistent direction - plausible, not
+proven.
+
+**Why this matters for everything else in this document:** it explains,
+structurally, why the AH fair probability was never going to measure "how
+big a favorite" a team is (see section 1's correlation finding - the same
+0.25pt move corresponds to anywhere from 0.47pp to 9.73pp of probability
+change). The probability has almost no room to move regardless of the
+line, by design - any real conviction in the market has to squeeze out
+through a very narrow channel around 50%, which is part of why so many
+of the probability-based signals in this document struggled to find
+real separation.
+
+## 8. Open threads, if more data or time becomes available
 
 - Re-test the "never-moved lines draw more" observation (currently
   33.3% vs 23.3%, a real-looking gap that doesn't yet clear the usual
