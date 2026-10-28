@@ -471,6 +471,38 @@ n=10 - real, and the clean monotonic shape (plus the mirrored weakness
 on the opposing side) earns more trust than a single noisy bucket would,
 but still not a huge sample.
 
+**Round-by-round robustness check:** broke the pooled total down by each
+of the (now 6) separate rounds collected, specifically to see whether
+"strong" genuinely outperforms "moderate" within individual rounds, not
+just in the pooled total - a pooled gap can look cleaner than it really
+is if one big round or a couple of lucky small samples are doing all the
+work.
+
+| Round | Strong | Moderate | None |
+|---|---|---|---|
+| Sep Week 1 | 50.0% (n=2) | 40.0% (n=5) | 40.0% (n=5) |
+| Sep Week 2 | 100.0% (n=1) | 40.0% (n=5) | 20.0% (n=5) |
+| Sep Week 3 | - (n=0) | 16.7% (n=6) | 0.0% (n=1) |
+| Sep Week 4 | 62.5% (n=8) | 60.0% (n=25) | 30.0% (n=10) |
+| Oct Week 3 (17m) | 100.0% (n=2) | 40.0% (n=5) | 25.0% (n=4) |
+| Oct Wk 3 (new, 16m) | 75.0% (n=4) | 62.5% (n=8) | - (n=0) |
+| **Pooled, all 6 rounds (131 matches)** | **70.6% (n=17)** | **50.0% (n=54)** | **28.0% (n=25)** |
+
+**What holds up robustly:** the "none" tier (no confirming move at all)
+sits at or near the bottom in every single round - that part of the
+finding is solid. **What's improving but still thin:** before this
+newest round, only one round (Sep Week 4) had enough matches in the
+strong tier to compare it against moderate meaningfully, and the two
+were statistically indistinguishable there (62.5% vs 60.0%). The new
+round adds a second data point, and it goes the right way - strong
+(75.0%, n=4) clearly ahead of moderate (62.5%, n=8) within that round
+alone - and the pooled gap held essentially steady (70.6% vs 50.0%,
+versus 69.2% vs 47.8% before). That's a point in favor of keeping strong
+and moderate as genuinely distinct tiers rather than merging them, but
+most individual rounds still carry only 0-4 strong-tier matches - this
+needs to keep being re-checked as more rounds come in before calling the
+specific split between the two tiers settled.
+
 ## 13. Open threads, if more data or time becomes available
 
 - Re-test the "never-moved lines draw more" observation (currently
