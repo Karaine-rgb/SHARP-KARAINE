@@ -287,7 +287,54 @@ to specific sharp action.
   level, which remains unpredictable from every angle tried in this
   document.
 
-## 9. Open threads, if more data or time becomes available
+## 9. Converting AH line size into a real win probability, via the 1X2 market
+
+Section 7 showed the AH probability can't tell you how strong a favorite
+is - it stays pinned near 50% regardless of line size, by design. The
+1X2 market doesn't have that constraint, so pairing the two gives an
+actual, usable conversion: AH line size (who, and roughly how much) to
+1X2 probability (how much, as a real number), both read at the opening,
+before any money has landed, across all 115 matches:
+
+| Opening AH line | n | 1X2 favorite win-probability (median) |
+|---|---|---|
+| Pick'em (0.00) | 45 | 37.9% |
+| 0.25pt | 52 | 42.0% |
+| 0.50pt | 11 | 48.1% |
+| 0.75pt | 2 | 59.9% |
+| 1.00pt | 4 | 62.8% |
+| 1.50pt | 1 | 71.1% |
+
+This is a clean, sensible, monotonically increasing relationship - every
+step up in the AH line corresponds to a real step up in actual win
+probability. The two markets are coherent with each other: the AH line
+gives the ordinal ranking (bigger number = stronger favorite), the 1X2
+probability gives the cardinal number for how much stronger.
+
+Checking the reverse direction - does a stronger 1X2 reading for the AH
+favorite make that favorite's win more reliable - shows the same clean
+trend, now from a second, independent angle on top of section 6's
+handicap-size finding:
+
+| 1X2 favorite probability | n | Favorite actually won |
+|---|---|---|
+| >=45% | 23 | 52.2% |
+| >=50% | 10 | 50.0% |
+| >=55% | 7 | 71.4% |
+| >=60% | 5 | 80.0% |
+| >=65% | 1 | 100.0% |
+
+**Caveat, same as everywhere else in this document:** the samples thin
+out fast past the >=50% row (7, 5, then just 1 match) - trust the
+*direction* (stronger favorite, more reliable pick) far more than any
+specific number beyond that point.
+
+**Practical takeaway:** favorite strength can be estimated properly by
+combining the two markets - use the AH opening line to identify *who* is
+favored, and the opening 1X2 probability (not the AH probability) to
+estimate *how much*, using the table above as a rough conversion.
+
+## 10. Open threads, if more data or time becomes available
 
 - Re-test the "never-moved lines draw more" observation (currently
   33.3% vs 23.3%, a real-looking gap that doesn't yet clear the usual
