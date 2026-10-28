@@ -554,6 +554,9 @@ function renderCards(detail) {
       ${fav.lead_change
         ? `<div class="sub">⚠ 1X2 lead changed from ${fav.opening_favorite || "pick'em"} by ${fav.lead_change_gap_pp.toFixed(2)}pp - overriding the opening line per the hard rule in RESEARCH_FINDINGS.md section 10</div>`
         : `<div class="sub">Backtested on 115 real matches: right 68.1% of non-draw matches, improving with a bigger line - see RESEARCH_FINDINGS.md</div>`}
+      ${fav.confidence !== "none"
+        ? `<div class="sub">✓ confidence: <strong>${fav.confidence}</strong> - a ${fav.confirming_move_pp.toFixed(2)}pp 1X2 swing confirmed this favorite (backtested 73-80% right at this size, section 12)</div>`
+        : `<div class="sub">confidence: none - no sizeable confirming 1X2 swing seen yet</div>`}
     </div>
     <div class="card">
       <h4>AH line shift</h4>

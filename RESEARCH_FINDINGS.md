@@ -409,7 +409,69 @@ mechanistic confirmation of the balancing picture from sections 4 and 8,
 now decomposed by which side is doing the forcing at each individual
 move, not just confirmed in aggregate.
 
-## 12. Open threads, if more data or time becomes available
+## 12. A confirming 1X2 move pins down the favorite; an opposing one mostly doesn't
+
+Combined two earlier findings: the opening AH line's favorite (sections
+6, 7, 9) and the individual 1X2 zigzag move magnitude (checked on its
+own, not match-averaged, same as section 11's style). For every real
+swing in a match's 1X2 history, checked whether it moved TOWARD the
+opening AH favorite (confirms) or AWAY from it (opposes), then redid the
+magnitude-accuracy breakdown split by that.
+
+**Confirms (a sizeable 1X2 move toward the side the opening line already
+favored):**
+
+| Move size | n | Accuracy |
+|---|---|---|
+| >=0.5pp | 210 | 49.0% |
+| >=1.0pp | 126 | 53.2% |
+| >=2.0pp | 54 | 53.7% |
+| >=3.0pp | 24 | 58.3% |
+| >=4.0pp | 15 | 73.3% |
+| >=5.0pp | 10 | 80.0% |
+
+A clean, monotonic climb - every step up in size is a step up in
+accuracy, with no bouncing around this time.
+
+**Opposes (a sizeable move toward the underdog instead) - the mirror
+image, and what makes the first result trustworthy:**
+
+| Move size | n | Accuracy (underdog won) |
+|---|---|---|
+| >=0.5pp | 192 | 17.2% |
+| >=1.0pp | 129 | 20.2% |
+| >=2.0pp | 57 | 22.8% |
+| >=4.0pp | 20 | 35.0% |
+| >=5.0pp | 13 | 38.5% |
+
+When the move goes against the favorite, the underdog mostly still
+doesn't win - the original favorite comes through anyway most of the
+time. A real signal should show the other side correspondingly weak, not
+just one side looking good, and it does.
+
+**Practical takeaway:** the opening AH line identifies who the real
+favorite is; a sizeable 1X2 move toward that *same* favorite - not away
+from it - is what actually pins the pick down with real confidence. A big
+move isn't inherently meaningful on its own; it's meaningful specifically
+when it agrees with what the opening line already said.
+
+**Built into `favorite_strength()`:** the function now reports a
+`confidence` field ("none" / "moderate" / "strong") based on the biggest
+confirming 1X2 swing found, using `CONFIG["confirming_move_meaningful_pp"]`
+(1.0) and `CONFIG["confirming_move_strong_pp"]` (4.0). This never changes
+*who* the favorite is - only the separate, stricter lead-change rule
+(section 10) can do that - it only raises confidence in the favorite
+already identified. Verified against the real 115-match dataset after
+building it: strong n=13 (69.2%), moderate n=46 (47.8%), none n=25
+(28.0%) - the same ordering holds on the deployed function, not just the
+backtest script.
+
+**Caveat, same as section 10:** the best numbers (73-80%) sit on n=15 and
+n=10 - real, and the clean monotonic shape (plus the mirrored weakness
+on the opposing side) earns more trust than a single noisy bucket would,
+but still not a huge sample.
+
+## 13. Open threads, if more data or time becomes available
 
 - Re-test the "never-moved lines draw more" observation (currently
   33.3% vs 23.3%, a real-looking gap that doesn't yet clear the usual

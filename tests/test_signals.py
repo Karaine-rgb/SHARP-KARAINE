@@ -135,6 +135,45 @@ def test_favorite_strength_lead_change_below_floor_does_not_override():
     assert result["lead_change"] is False
 
 
+def test_favorite_strength_strong_confirming_move_raises_confidence():
+    sp = [sp_point(48, -0.25)]  # home favored at the open
+    ml = [
+        ml_point(48, 0.50, 0.25, 0.25),
+        ml_point(24, 0.47, 0.25, 0.28),   # dips first (a real reversal, not just noise)
+        ml_point(1, 0.56, 0.25, 0.19),    # then a 9pp swing toward home - confirms the favorite
+    ]
+    result = favorite_strength(sp, ml)
+    assert result["opening_favorite"] == "home"
+    assert result["confirming_move_pp"] == pytest.approx(9.0, abs=0.01)
+    assert result["confidence"] == "strong"
+    assert result["favorite"] == "home"  # confidence boost never changes who the favorite is
+
+
+def test_favorite_strength_opposing_move_does_not_raise_confidence():
+    sp = [sp_point(48, -0.25)]  # home favored at the open
+    ml = [
+        ml_point(48, 0.60, 0.20, 0.20),
+        ml_point(24, 0.55, 0.20, 0.25),
+        ml_point(1, 0.50, 0.20, 0.30),   # steadily moves toward away the whole time - no confirming move at all
+    ]
+    result = favorite_strength(sp, ml)
+    assert result["opening_favorite"] == "home"
+    assert result["confirming_move_pp"] is None  # every move here favors away, not home
+    assert result["confidence"] == "none"
+
+
+def test_favorite_strength_small_confirming_move_is_moderate_not_strong():
+    sp = [sp_point(48, -0.25)]
+    ml = [
+        ml_point(48, 0.50, 0.30, 0.20),
+        ml_point(24, 0.48, 0.30, 0.22),   # dips (reversal)
+        ml_point(1, 0.515, 0.30, 0.185),  # then a 3.5pp swing toward home
+    ]
+    result = favorite_strength(sp, ml)
+    assert result["confirming_move_pp"] == pytest.approx(3.5, abs=0.01)
+    assert result["confidence"] == "moderate"
+
+
 # ---------------------------------------------------------------------------
 # x2_displacement
 # ---------------------------------------------------------------------------

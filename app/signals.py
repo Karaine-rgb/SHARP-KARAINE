@@ -63,6 +63,16 @@ CONFIG = {
     # 18 of those 20 while still clearing real noise. Small sample -
     # trusted here per explicit user direction rather than left watch-only.
     "lead_change_min_gap_pp": 2.0,
+    # favorite_strength() confirming-move confidence (RESEARCH_FINDINGS.md
+    # section 12): thresholds for the biggest individual 1X2 zigzag swing
+    # that agrees with the OPENING AH favorite. Backtested on every
+    # individual swing pooled across 115 matches - "moderate" (>=1pp)
+    # covers accuracy climbing from ~49% to ~58%, "strong" (>=4pp) covers
+    # 73.3% (n=15) and 80.0% (n=5pp+, n=10). An OPPOSING swing of the same
+    # size stays weak (17-39%), which is why this only ever boosts
+    # confidence in the existing favorite - it never changes who it is.
+    "confirming_move_meaningful_pp": 1.0,
+    "confirming_move_strong_pp": 4.0,
 }
 
 # Rejected: per-league / liquidity-aware thresholds (scaling ah_shift_
@@ -105,6 +115,50 @@ def ah_line_shift(spread_series: list[dict]) -> dict:
     return {"opening": opening, "current": current, "shift": shift, "magnitude": abs(shift), "direction": direction}
 
 
+def _zigzag_moves(values: list[float], min_reversal_frac: float = 0.001) -> list[tuple[float, str]]:
+    """Breaks a chronological probability series (as raw 0-1 fractions)
+    into its individual zigzag swings - every real reversal of at least
+    min_reversal_frac (default 0.1pp), not just the net opening-to-final
+    move. Returns (magnitude_pp, side) pairs, side being 'home' if that
+    particular swing rose, 'away' if it fell. See favorite_strength()'s
+    confirming-move confidence for why this matters: a swing's own
+    magnitude, checked on its own against the real result, turned out to
+    carry real signal even when the market later reversed that exact
+    swing (RESEARCH_FINDINGS.md section 12).
+    """
+    if len(values) < 2:
+        return []
+    pivots = [values[0]]
+    direction = 0
+    extreme = values[0]
+    for v in values[1:]:
+        if direction == 0:
+            if v > values[0]:
+                direction, extreme = 1, v
+            elif v < values[0]:
+                direction, extreme = -1, v
+            continue
+        if direction == 1:
+            if v >= extreme:
+                extreme = v
+            elif extreme - v >= min_reversal_frac:
+                pivots.append(extreme)
+                direction, extreme = -1, v
+        else:
+            if v <= extreme:
+                extreme = v
+            elif v - extreme >= min_reversal_frac:
+                pivots.append(extreme)
+                direction, extreme = 1, v
+    pivots.append(extreme if direction != 0 else values[-1])
+
+    moves = []
+    for i in range(len(pivots) - 1):
+        start, end = pivots[i], pivots[i + 1]
+        moves.append((abs(end - start) * 100.0, "home" if end > start else "away"))
+    return moves
+
+
 def favorite_strength(spread_series: list[dict], moneyline_series: list[dict]) -> dict:
     """Identifies the favorite from the OPENING Asian Handicap line - before
     any money has landed - and estimates how strong that favorite actually
@@ -133,12 +187,26 @@ def favorite_strength(spread_series: list[dict], moneyline_series: list[dict]) -
     (no lead change) to 35.0% (any lead change) to 22.2% once the final gap
     clears 2pp (n=9) - a small but consistent, strengthening pattern,
     trusted here per explicit user direction rather than left watch-only.
+
+    CONFIDENCE BOOST - confirming move (RESEARCH_FINDINGS.md section 12):
+    separately, the single biggest 1X2 zigzag swing that agrees with the
+    OPENING AH favorite is itself informative, even when checked on its
+    own regardless of whether that swing later got reversed. Backtested
+    on every individual swing pooled across 115 matches: a confirming
+    swing's accuracy climbs cleanly from 49.0% (>=0.5pp) to 58.3% (>=3pp)
+    to 73.3% (>=4pp, n=15) to 80.0% (>=5pp, n=10) - while an OPPOSING
+    swing of the same size stays weak throughout (17.2% to 38.5%),
+    confirming this is a real asymmetry, not noise. This never changes
+    WHO the favorite is (that's the lead-change rule above, which uses a
+    stricter, persisted-to-the-end definition) - it only raises confidence
+    in the favorite already identified.
     """
     opening_points, _ = _first_last(spread_series, "home_points")
     if opening_points is None:
         return {
             "favorite": None, "opening_favorite": None, "opening_line": None,
             "favorite_prob": None, "lead_change": False, "lead_change_gap_pp": None,
+            "confirming_move_pp": None, "confidence": "none",
         }
 
     if opening_points < 0:
@@ -183,6 +251,28 @@ def favorite_strength(spread_series: list[dict], moneyline_series: list[dict]) -
             lead_change = True
             lead_change_gap_pp = gap_pp
 
+    # Confirming-move confidence boost - checked against the OPENING AH
+    # favorite specifically (not the lead-change-adjusted one above), since
+    # that's exactly what was backtested. Only ever raises confidence; it
+    # cannot change which side is reported as the favorite.
+    confirming_move_pp = None
+    confidence = "none"
+    if opening_favorite is not None:
+        valid_ml = sorted(
+            (s for s in moneyline_series if s.get("fair_home_prob") is not None and s.get("status") != "suspended"),
+            key=lambda s: s["captured_at"],
+        )
+        home_prob_series = [s["fair_home_prob"] for s in valid_ml]
+        confirming_magnitudes = [
+            mag for mag, side in _zigzag_moves(home_prob_series) if side == opening_favorite
+        ]
+        if confirming_magnitudes:
+            confirming_move_pp = max(confirming_magnitudes)
+            if confirming_move_pp >= CONFIG["confirming_move_strong_pp"]:
+                confidence = "strong"
+            elif confirming_move_pp >= CONFIG["confirming_move_meaningful_pp"]:
+                confidence = "moderate"
+
     return {
         "favorite": favorite,
         "opening_favorite": opening_favorite,
@@ -190,6 +280,8 @@ def favorite_strength(spread_series: list[dict], moneyline_series: list[dict]) -
         "favorite_prob": favorite_prob,
         "lead_change": lead_change,
         "lead_change_gap_pp": lead_change_gap_pp,
+        "confirming_move_pp": confirming_move_pp,
+        "confidence": confidence,
     }
 
 
