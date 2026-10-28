@@ -247,7 +247,47 @@ through a very narrow channel around 50%, which is part of why so many
 of the probability-based signals in this document struggled to find
 real separation.
 
-## 8. Open threads, if more data or time becomes available
+## 8. Synthesis: the opening line is the signal, movement is risk management
+
+Pulling sections 4, 6 and 7 together into one statement, since it's the
+clearest conclusion this investigation has produced:
+
+**The opening Asian Handicap line - the point value Pinnacle posts before
+any money has landed - is where the real favorite/underdog signal lives.
+Line movement after that is primarily about balancing the book, not about
+revealing a truer favorite.**
+
+Two independent findings support the first half:
+- The opening line's favorite actually won 68.1% of non-draw matches
+  (n=47), strengthening with the size of the handicap (section 6).
+- The AH fair probability barely moves from 50% regardless of how big the
+  line is (section 7) - confirmation that the *point value*, not the
+  probability, is what encodes the quality gap between the teams.
+
+And the second half is supported by everything in section 4: every
+attempt to read the *direction* a line moved as a signal of who'd
+actually win landed close to a coin flip, while real money was
+confirmed to reliably drive those moves (probability pressure precedes
+and matches the next line step 75-86% of the time) and most limit
+increases turned out to be scheduled housekeeping rather than reactions
+to specific sharp action.
+
+**Two caveats that keep this honest, not overstated:**
+- "No risk" is slightly too strong - final settlement lands close to
+  balanced (46.7% / 53.3%) but not perfectly 50/50, and Pinnacle's actual
+  edge is the vig either way.
+- Movement isn't completely uninformative - lines nobody ever challenges
+  settle noticeably less evenly than lines that do move (18 points off
+  fair vs 4, section 2). Money moving the line does seem to genuinely
+  improve how well-calibrated the number ends up - we just haven't found
+  a way to read *which direction* it moved and turn that into a reliable
+  pick for who wins.
+- None of this touches draws. The opening line can tell you who the
+  better side is; it says nothing about the ~27% of matches that end
+  level, which remains unpredictable from every angle tried in this
+  document.
+
+## 9. Open threads, if more data or time becomes available
 
 - Re-test the "never-moved lines draw more" observation (currently
   33.3% vs 23.3%, a real-looking gap that doesn't yet clear the usual
