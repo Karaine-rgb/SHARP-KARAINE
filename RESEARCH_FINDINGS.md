@@ -35,6 +35,7 @@ proven.
 | Betslip generator (primary pick + draw-cover) | Barely beat "just cover every match with the draw" (68.4% vs 69.4%) | Not worth the complexity as built |
 | "Steam" via the existing ratio-based classifier (`velocity_shape`, recent-vs-total change ratio) | 41.7% (n=48) - statistically indistinguishable from drift (41.2%), building (41.4%), and the 40.0% baseline | Rejected at full scale (an earlier 70-100% reading was from 2-5 decisive matches per label - noise) |
 | "Steam" via rolling Z-score anomaly detection (own price vs its recent rolling mean/stdev, floored to avoid division-by-near-zero) | 34-37% accuracy across every threshold tried (1.5 to 4.0) - below the 40% baseline at every single threshold | Rejected |
+| **Pinnacle's opening AH line favorite** (the very first line posted, before any money/movement) | 45.7% overall (n=70, vs 38.6% baseline) - **68.1% (n=47) once draws are set aside** - and climbs with the size of the opening handicap (50% at n=18, 80% at n=5) | **Most promising single lead so far - see section 6** |
 
 ## 2. What we know for certain about the market's mechanics
 
@@ -163,7 +164,46 @@ detection is not a productive direction with the data and tools available
 right now - closing this line of investigation rather than trying further
 variants of the same underlying idea.
 
-## 6. Open threads, if more data or time becomes available
+## 6. Pinnacle's opening AH line as a standalone predictor - the most promising lead so far
+
+Every other signal in this document is about reacting to the market -
+how it moved, how fast, how confident it looked. This one is different:
+it only uses Pinnacle's very *first* line on a match, before a single bet
+has landed anywhere. On all 115 matches:
+
+- **39% of matches (45/115) open with no favorite at all** - a flat
+  0.00 line. That's a real fact about how tight most of these jackpot
+  matches look from the very start, before any action.
+- **Of the 70 matches that do open with a real favorite, that favorite
+  actually won 45.7% of the time** (vs a 38.6% baseline of always
+  picking home on the same matches) - a real ~7-point edge.
+- **Setting the draws aside (23 of those 70, the usual unavoidable
+  cost), the opening favorite was right 68.1% of the time (32/47)** -
+  a genuinely strong number for the simplest possible read: nothing but
+  Pinnacle's own first guess.
+- **It gets stronger with a bigger opening handicap**: 45.7% at any
+  nonzero line, 50.0% at ±0.5 or more (n=18), 80.0% at ±1.0 or more
+  (n=5 - too few to trust that last number specifically, but the
+  direction is consistent at every step).
+
+**Why this is the most promising lead in this whole investigation:**
+everything else tested here tried to extract information from how the
+market *reacted*, and none of it held up - the market's reaction turned
+out to be close to a coin flip against the real result (see sections 2-5).
+This is the first finding that bypasses that entirely and instead checks
+whether Pinnacle's own initial judgment - built from their own models and
+information before the public ever gets a chance to weigh in - is any
+good on its own. The honest, tested answer here is: yes, more than
+anything else tried, once draws are set aside.
+
+**Caveats, stated plainly:** draws remain exactly as unpredictable as
+everywhere else in this document - this is a signal for the non-draw
+cases only. The bigger-handicap buckets (n=18, n=5) are too thin yet to
+pin down a specific cutoff with confidence. And this has only been
+checked on 115 matches across five rounds - worth re-confirming as more
+data comes in, the same discipline applied to everything else here.
+
+## 7. Open threads, if more data or time becomes available
 
 - Re-test the "never-moved lines draw more" observation (currently
   33.3% vs 23.3%, a real-looking gap that doesn't yet clear the usual
