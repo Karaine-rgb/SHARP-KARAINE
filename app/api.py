@@ -13,6 +13,7 @@ from app import db
 from app.pinnacle_client import ArcadiaClient, ArcadiaError
 from app.poller import poller
 from app.settings_store import get_all_settings_masked, get_arcadia_api_key, set_setting
+from app.signals import favorite_strength
 from app.ws import manager
 
 router = APIRouter(prefix="/api")
@@ -477,6 +478,15 @@ async def match_detail(matchup_id: int):
         d = dict(r)
         d["detail_json"] = db.from_jsonb(d["detail_json"])
         signals_by_type[r["signal_type"]] = d
+
+    # favorite_strength is a pure function of the main-line snapshots, so
+    # derive it fresh here instead of trusting the stored row: matches
+    # scored before the feature existed (or before a later refinement) have
+    # no row or a stale-schema one, and would otherwise read as "pick'em".
+    signals_by_type["favorite_strength"] = {
+        "signal_type": "favorite_strength",
+        "detail_json": favorite_strength(series["spread"], series["moneyline"]),
+    }
 
     return {
         "matchup": dict(matchup),
