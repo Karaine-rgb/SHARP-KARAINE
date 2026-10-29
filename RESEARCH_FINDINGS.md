@@ -503,7 +503,48 @@ most individual rounds still carry only 0-4 strong-tier matches - this
 needs to keep being re-checked as more rounds come in before calling the
 specific split between the two tiers settled.
 
+**Do draws cluster where confidence is low? (an open lead, not a finding):**
+checked whether matches that had an opening AH favorite but ended in a
+draw were disproportionately the ones graded "none" (no sizeable
+confirming 1X2 swing). Ran the deployed `favorite_strength()` on all 131
+matches; 82 had an opening AH favorite (the other 49 opened at 0.00 and
+have no confidence grade), and 26 of those 82 drew (31.7%; pick'em
+matches drew 10/49 = 20.4%). Note this uses the 82 opening-favorite
+matches only, so the tier counts differ from the accuracy table above,
+which also counted pick'em matches that picked up a favorite through the
+lead-change rule.
+
+| Confidence tier | Draws | Draw rate |
+|---|---|---|
+| none | 5/11 | 45.5% |
+| moderate | 18/54 | 33.3% |
+| strong | 3/17 | 17.6% |
+
+| Biggest confirming 1X2 swing | Draws | Draw rate |
+|---|---|---|
+| none at all | 1/2 | 50.0% |
+| 0-1pp | 4/9 | 44.4% |
+| 1-2pp | 7/23 | 30.4% |
+| 2-4pp | 11/31 | 35.5% |
+| >=4pp | 3/17 | 17.6% |
+
+The direction fits the idea that a favorite whose own 1X2 probability
+barely moves draws more often, and that a big confirming swing is where
+draws are rarest. But it is not established: "none" vs moderate+strong is
+45.5% (5/11) vs 29.6% (21/71), Fisher exact two-sided p=0.31; "strong"
+vs the rest is 17.6% (3/17) vs 35.4% (23/65), p=0.24. Only 5 of the 26
+draws (19%) fall in the "none" tier (13% of matches), so most draws sit in
+moderate. Round by round, the "none" tier is empty in 2 of 6 rounds and
+has 1-2 matches in 3 more, so there is no consistent per-round signal. Do
+not use this to adjust the confidence tiers or to flag draw risk until
+the "none" sample is several times larger.
+
 ## 13. Open threads, if more data or time becomes available
+
+- Re-test whether low-confidence favorites ("none" tier, currently 5/11
+  draws) draw more than the 31.7% baseline as more rounds arrive (section
+  12); the strong tier drawing least (3/17) is the same question from the
+  other end.
 
 - Re-test the "never-moved lines draw more" observation (currently
   33.3% vs 23.3%, a real-looking gap that doesn't yet clear the usual
