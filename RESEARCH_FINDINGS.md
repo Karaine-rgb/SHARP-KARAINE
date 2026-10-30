@@ -35,6 +35,7 @@ proven.
 | Betslip generator (primary pick + draw-cover) | Barely beat "just cover every match with the draw" (68.4% vs 69.4%) | Not worth the complexity as built |
 | "Steam" via the existing ratio-based classifier (`velocity_shape`, recent-vs-total change ratio) | 41.7% (n=48) - statistically indistinguishable from drift (41.2%), building (41.4%), and the 40.0% baseline | Rejected at full scale (an earlier 70-100% reading was from 2-5 decisive matches per label - noise) |
 | "Steam" via rolling Z-score anomaly detection (own price vs its recent rolling mean/stdev, floored to avoid division-by-near-zero) | 34-37% accuracy across every threshold tried (1.5 to 4.0) - below the 40% baseline at every single threshold | Rejected |
+| Team-total lines (closing Over probability) vs each team's actual goals | Well calibrated (+2.7pp on the 1.5 line, SE 3.4pp); movement adds nothing beyond the close (52.0%, n=50); implied-goals gap does not flag draws | No new edge - see section 13 |
 | **Pinnacle's opening AH line favorite** (the very first line posted, before any money/movement) | 45.7% overall (n=70, vs 38.6% baseline) - **68.1% (n=47) once draws are set aside** - and climbs with the size of the opening handicap (50% at n=18, 80% at n=5) | **Most promising single lead so far - see section 6** |
 
 ## 2. What we know for certain about the market's mechanics
@@ -539,13 +540,70 @@ has 1-2 matches in 3 more, so there is no consistent per-round signal. Do
 not use this to adjust the confidence tiers or to flag draw risk until
 the "none" sample is several times larger.
 
-## 13. Open threads, if more data or time becomes available
+## 13. Team totals vs the goals each team actually scored
+
+Team-total (Over/Under on one team's own goals) markets are collected for
+every match (full game, main line, `market_key` ending `;home` / `;away`;
+Over is stored in the `home_*` slot, Under in the `away_*` slot) but no
+signal or dashboard card uses them. Tested the closing line against real
+goals: 262 team-sides from all 131 matches across the 6 rounds. "Closing" =
+the last snapshot captured at or before kickoff (median 0.13h before). A
+first pass accidentally included snapshots captured up to ~2h after
+kickoff (possibly live prices); those were dropped and everything was
+re-run, and requiring the last snapshot to be within 1h of kickoff changes
+nothing material. Lines seen: 0.5 and 1.5 (plus 2 on 2.5), no integer lines,
+so no pushes.
+
+**Calibration:**
+
+| Line | n | Market Over | Actual Over | Gap |
+|---|---|---|---|---|
+| 0.5 | 48 | 64.8% | 68.8% | +4.0pp (SE 6.7) |
+| 1.5 | 212 | 41.2% | 43.9% | +2.7pp (SE 3.4) |
+
+Goals per team: 1.389 actual vs 1.358 implied (a Poisson fitted to each
+closing line + Over probability); home 1.46 vs 1.41, away 1.32 vs 1.31. All
+gaps are inside the noise - no sign Pinnacle mis-prices team totals in
+either direction. September Week 1 is the one outlier round (1.68 actual
+vs 1.37 implied); the other five are close.
+
+**Information content:** within the 1.5 line only (so the choice of line
+can't flatter the score), the top third by closing Over probability went
+Over 57.7%, the middle third 38.6% and the bottom third 35.7%; correlation
+between Over probability and the Over result is 0.148 (n=211). Brier 0.2419
+vs 0.2465 for a constant at the base rate - a small edge. (The pooled Brier
+of 0.2349 looks better but is partly just 0.5 vs 1.5 lines having different
+base rates.) Implied goals vs a flat league mean: RMSE 1.181 vs 1.198,
+correlation with goals scored 0.18. Single-team goals are mostly noise.
+
+**Relative strength and totals:** implied home-minus-away goals correlate
+0.26 with the real goal difference, and the team with higher implied goals
+won 62 of 94 non-draw matches (66.0%) - about the same as the opening-AH
+favorite (68.1%, section 6), and almost certainly the same favorite
+information expressed another way, not an independent signal. Implied total
+goals correlate only 0.075 with actual total goals.
+
+**Movement and draws (no usable signal):** where the line was unchanged
+open to close (246 of 261), the open-to-close move in Over probability does
+not predict beyond the closing price: residual +1.5pp when Over rose >=2pp
+(n=61), +1.4pp when it fell >=2pp (n=56). For moves >=4pp the market moved
+toward the side that happened 26/50 (52.0%). The closing price beat the
+opening price only trivially (Brier 0.2375 vs 0.2391). A small gap between
+the two teams' implied goals does not flag draws: 27.1% when the gap is
+<0.25 (23/85) vs 28.3% when >=0.25 (13/46).
+
+**Conclusion:** team totals are well calibrated and add essentially nothing
+to the favorite, confidence or draw questions beyond what the AH and 1X2
+markets already give. The mild lean toward Over on the 1.5 line (+2.7pp)
+is below significance at this sample. Worth re-checking only if more rounds
+accumulate.
+
+## 14. Open threads, if more data or time becomes available
 
 - Re-test whether low-confidence favorites ("none" tier, currently 5/11
   draws) draw more than the 31.7% baseline as more rounds arrive (section
   12); the strong tier drawing least (3/17) is the same question from the
   other end.
-
 - Re-test the "never-moved lines draw more" observation (currently
   33.3% vs 23.3%, a real-looking gap that doesn't yet clear the usual
   statistical significance bar) as more rounds come in.
@@ -560,5 +618,5 @@ the "none" sample is several times larger.
   product to build from what we actually know - a risk-management aid
   rather than a win-picker.
 
-*Last updated from a backtesting session covering 115 real Megajackpot
-matches across September and October 2026 rounds.*
+*Last updated from a backtesting session covering 131 real Megajackpot
+matches across six September and October 2026 rounds.*
