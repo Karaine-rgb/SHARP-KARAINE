@@ -551,7 +551,7 @@ the last snapshot captured at or before kickoff (median 0.13h before). A
 first pass accidentally included snapshots captured up to ~2h after
 kickoff (possibly live prices); those were dropped and everything was
 re-run, and requiring the last snapshot to be within 1h of kickoff changes
-nothing material. Lines seen: 0.5 and 1.5 (plus 2 on 2.5), no integer lines,
+nothing material. Closing lines seen: 0.5 and 1.5 (plus 2 team-sides on 2.5, too few to read), no integer lines,
 so no pushes.
 
 **Calibration:**
