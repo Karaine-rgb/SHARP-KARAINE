@@ -540,6 +540,27 @@ has 1-2 matches in 3 more, so there is no consistent per-round signal. Do
 not use this to adjust the confidence tiers or to flag draw risk until
 the "none" sample is several times larger.
 
+**Does the same hold on pick'em matches? (no evidence either way):** as
+deployed, a pick'em match (opening AH line 0.00, 49 of the 131) has no
+opening favorite, so every one is graded "none" and there is no strong
+tier to compare. As an exploratory analog only (not the deployed
+definition), treated the 1X2 market's own opening leader as the favorite
+and applied the same 1pp / 4pp confirming-swing thresholds:
+
+| Group | Strong-tier draws | Everyone else | Fisher p |
+|---|---|---|---|
+| Pick'em (baseline 10/49 = 20.4%) | 1/8 = 12.5% | 9/41 = 22.0% | 1.00 |
+| Favorite (baseline 26/82 = 31.7%) | 3/17 = 17.6% | 23/65 = 35.4% | 0.24 |
+
+The pick'em gap points the same way but rests on one draw in 8 matches,
+so it carries essentially no information. Using the biggest 1X2 swing in
+either direction instead (>=4pp vs smaller): pick'em 4/18 (22.2%) vs 6/31
+(19.4%), p=1.00 - flat; favorite matches 7/31 (22.6%) vs 19/51 (37.3%),
+p=0.22. Five of the six rounds have at most 2 strong-tier pick'em
+matches (the sixth has 4), so no per-round check is possible. Pick'em matches also draw
+less overall (20.4% vs 31.7%), leaving little room for any tier to
+separate. The favorite-match figures reproduce the table above exactly.
+
 ## 13. Team totals vs the goals each team actually scored
 
 Team-total (Over/Under on one team's own goals) markets are collected for
