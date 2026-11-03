@@ -5,6 +5,10 @@ for the matches that make up a SportPesa Megajackpot round, classifies
 price/limit movement into sharp-money signals, scores each match, and
 serves a live dashboard + Telegram alerts.
 
+Separate tool in the same repo: **[Odds Movement Visualizer](odds_visualizer/README.md)**
+charts odds movement across bookmakers and exchanges using The Odds API,
+within the 500-credit free plan.
+
 ## Before you trust any of this
 
 - **The discovery endpoint (`/leagues/{id}/matchups`) has now been verified

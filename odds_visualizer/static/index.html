@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Odds Movement Visualizer</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Odds Movement</h1>
+      <span id="mode-pill" class="pill"></span>
+    </div>
+    <div class="credits" id="credits"></div>
+  </header>
+
+  <div id="demo-banner" class="banner hidden">
+    Demo mode: no <code>ODDS_API_KEY</code> set. All matches and prices below are made up, and no credits are used.
+  </div>
+
+  <main class="layout">
+    <aside class="side">
+      <section class="card">
+        <h2>Tracked matches</h2>
+        <ul id="tracked-list" class="list"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Add matches</h2>
+        <div class="row">
+          <select id="sport-select"></select>
+          <button id="btn-load-fixtures" class="btn">Load fixtures</button>
+        </div>
+        <p class="hint">Loading fixtures uses the events endpoint. The real cost of every call is read from the API and shown in the call log.</p>
+        <ul id="fixture-list" class="list"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Poll schedule</h2>
+        <p class="hint">One poll covers every tracked match in the same league, so adding more matches from the same league costs nothing extra.</p>
+        <div id="schedule"></div>
+      </section>
+
+      <section class="card">
+        <h2>API call log</h2>
+        <div id="call-log" class="log"></div>
+      </section>
+    </aside>
+
+    <section class="content">
+      <div id="empty" class="card empty">Pick a tracked match on the left.</div>
+      <div id="match-view" class="hidden">
+        <div class="card">
+          <div class="match-head">
+            <div>
+              <h2 id="match-title"></h2>
+              <div id="match-sub" class="dim"></div>
+            </div>
+            <div class="controls">
+              <select id="market-select" aria-label="Market"></select>
+              <div class="seg" id="mode-seg">
+                <button data-mode="odds" class="on">Odds</button>
+                <button data-mode="prob">Implied %</button>
+              </div>
+            </div>
+          </div>
+          <div class="seg tabs" id="outcome-tabs"></div>
+          <div class="chart-wrap">
+            <svg id="chart" role="img" aria-label="Odds movement chart"></svg>
+            <div id="tooltip" class="tooltip hidden"></div>
+          </div>
+          <div id="legend" class="legend"></div>
+          <p class="hint">Solid lines are bookmakers, dashed lines are exchanges. Click a name to hide or show it. Lines are drawn as steps: a price stays flat until the next poll sees a new one.</p>
+        </div>
+
+        <div class="card">
+          <h2>Movement since first poll</h2>
+          <div class="table-scroll">
+            <table id="move-table">
+              <thead><tr>
+                <th>Bookmaker</th><th>Type</th><th class="num">Open</th><th class="num">Latest</th>
+                <th class="num">Change</th><th class="num">Implied %</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
