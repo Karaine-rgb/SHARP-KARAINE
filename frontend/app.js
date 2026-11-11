@@ -822,25 +822,10 @@ function renderCards(detail) {
   }
   const ah = sig.ah_line_shift?.detail_json || {};
   const x2 = sig.x2_displacement?.detail_json || {};
-  const vel = sig.velocity_shape?.detail_json || {};
   const fav = sig.favorite_strength?.detail_json || {};
   const favTeamName = fav.favorite === "home" ? detail.matchup.home_team
     : fav.favorite === "away" ? detail.matchup.away_team : null;
-  const velLabels = {
-    steam: "Steam — fast, recent move",
-    drift: "Drift — old move, gone quiet",
-    building: "Building — move still in progress",
-    reversal: "Reversal — recently backing off",
-    swung_back: "Swung and came back",
-    quiet: "Quiet — no meaningful move",
-    insufficient_history: "Not enough history yet",
-  };
-  const velHistoryDropdown = renderHistoryDropdown(detail.velocity_transitions);
   const x2HistoryDropdown = renderHistoryDropdown(detail.x2_transitions);
-  const velSideNames = { home: "home", draw: "draw", away: "away" };
-  const velLabelText = vel.label
-    ? `${velLabels[vel.label] || vel.label}${vel.side && vel.label !== "quiet" && vel.label !== "insufficient_history" ? ` (${velSideNames[vel.side] || vel.side})` : ""}`
-    : "—";
 
   cardsEl.innerHTML = `
     <div class="card">
@@ -880,14 +865,6 @@ function renderCards(detail) {
       <div class="sub">from true opening line</div>
       ${x2.swung_back ? `<div class="sub">⚠ swung back: peaked at ${fmtPp(x2.peak_pp)} ${x2.peak_side} earlier, since retraced — not scored, shown for context only</div>` : ""}
       ${x2HistoryDropdown}
-    </div>
-    <div class="card card-experimental card-wide">
-      <h4>Move shape <span class="pill-experimental">watch only</span></h4>
-      <div class="value">${velLabelText}</div>
-      <div class="sub">${vel.total_change_pp !== undefined && vel.label && vel.label !== "quiet" && vel.label !== "insufficient_history"
-        ? `${fmtPp(vel.total_change_pp)} total${vel.recent_change_pp != null ? `, ${fmtPp(vel.recent_change_pp)} in the last ${vel.window_hours.toFixed(2)}h` : ""}${vel.peak_change_pp != null && vel.label === "swung_back" ? ` (peaked at ${fmtPp(vel.peak_change_pp)})` : ""}`
-        : "Not scored — promising in early testing, not yet proven"}</div>
-      ${velHistoryDropdown}
     </div>
   `;
 }
@@ -1024,6 +1001,61 @@ const COLOR_DRAW = "#ffd60a";
 const COLOR_AWAY = "#ff9500";
 const COLOR_LINE = "#bf5af2";
 
+// Move shapes (see velocity_shape() in app/signals.py) and the line colour each
+// one gets on the 1X2 fair-probability chart while it applies.
+const MOVE_SHAPES = {
+  steam: { color: "#ff2fa0", label: "Steam", desc: "fast move, mostly within the last few hours" },
+  building: { color: "#38d6ff", label: "Building", desc: "move still in progress" },
+  drift: { color: "#9b7bff", label: "Drift", desc: "older move that has gone quiet" },
+  reversal: { color: "#ff3b3b", label: "Reversal", desc: "recently backing off the move" },
+  swung_back: { color: "#f4f7ff", label: "Swung back", desc: "swung away from the opening line and came back" },
+};
+
+// Points inside a move's time span get that shape's colour; the segment ending
+// at a point takes the point's colour, so a span (from, to] colours exactly the
+// stretch from the moment the shape appeared until it stopped. Everything else
+// keeps the line's normal colour.
+function moveColoredData(rows, field, side, timeline) {
+  const data = toSeriesData(rows, field).map((d) => ({ ...d, value: d.value * 100 }));
+  const spans = (timeline || [])
+    .filter((g) => g.side === side && MOVE_SHAPES[g.label])
+    .map((g) => ({ from: toUnixSeconds(g.from), to: toUnixSeconds(g.to), color: MOVE_SHAPES[g.label].color }));
+  if (!spans.length) return data;
+  for (const d of data) {
+    const span = spans.find((g) => d.time > g.from && d.time <= g.to);
+    if (span) d.color = span.color;
+  }
+  return data;
+}
+
+function renderMoveKey(timeline, detail) {
+  const key = document.getElementById("key-1x2-moves");
+  const notes = document.getElementById("notes-1x2-moves");
+  if (!key) return;
+  const present = new Set((timeline || []).map((g) => g.label));
+  key.innerHTML =
+    Object.entries(MOVE_SHAPES)
+      .map(
+        ([name, m]) =>
+          `<div class="move-key-item${present.has(name) ? " seen" : ""}"><span class="move-key-line" style="background:${m.color}"></span><span><strong>${m.label}</strong> <span class="dim">${m.desc}</span></span></div>`
+      )
+      .join("") +
+    `<div class="move-key-item"><span class="move-key-line move-key-default"></span><span><strong>Normal colour</strong> <span class="dim">no move in progress</span></span></div>`;
+  const sideName = { home: detail.matchup.home_team, draw: "Draw", away: detail.matchup.away_team };
+  const fmt = (iso) => new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const spans = timeline || [];
+  notes.innerHTML = spans.length
+    ? `<details><summary>${spans.length} move${spans.length === 1 ? "" : "s"} in this match (shape when each stopped)</summary><ul class="move-list">` +
+      spans
+        .map(
+          (g) =>
+            `<li><span class="move-key-line" style="background:${MOVE_SHAPES[g.label].color}"></span><strong>${MOVE_SHAPES[g.label].label}</strong> on ${escapeHtml(sideName[g.side])} <span class="dim">${fmtPp(g.change_pp)} · ${fmt(g.from)} → ${fmt(g.to)}</span></li>`
+        )
+        .join("") +
+      "</ul></details>"
+    : `<span class="dim">No move of 0.8pp or more detected on any line yet.</span>`;
+}
+
 function renderCharts(detail) {
   const warningEl = document.getElementById("chart-lib-warning");
   if (typeof LightweightCharts === "undefined") {
@@ -1044,10 +1076,12 @@ function renderCharts(detail) {
   const pctFmt = (v) => `${(v * 100).toFixed(1)}%`;
   const numFmt = (v) => Number(v).toFixed(2);
 
+  const timeline = detail.move_spans || [];
   const c1 = makeChart("chart-1x2-prob");
-  const s1h = lineOn(c1, toSeriesData(ml, "fair_home_prob").map((d) => ({ ...d, value: d.value * 100 })), COLOR_HOME);
-  lineOn(c1, toSeriesData(ml, "fair_draw_prob").map((d) => ({ ...d, value: d.value * 100 })), COLOR_DRAW);
-  lineOn(c1, toSeriesData(ml, "fair_away_prob").map((d) => ({ ...d, value: d.value * 100 })), COLOR_AWAY);
+  const s1h = lineOn(c1, moveColoredData(ml, "fair_home_prob", "home", timeline), COLOR_HOME);
+  lineOn(c1, moveColoredData(ml, "fair_draw_prob", "draw", timeline), COLOR_DRAW);
+  lineOn(c1, moveColoredData(ml, "fair_away_prob", "away", timeline), COLOR_AWAY);
+  renderMoveKey(timeline, detail);
   s1h.setMarkers(cutoffMarkers(ml, "fair_home_prob", cutoffs, pctFmt));
   setLegend("legend-1x2-prob", [
     { color: COLOR_HOME, label: `${home} (Home)` },

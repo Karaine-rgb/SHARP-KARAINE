@@ -682,6 +682,18 @@ tbody tr:hover { background: rgba(56, 214, 255, 0.05); }
   .chart-grid { grid-template-columns: 1fr; }
 }
 
+/* key under the 1X2 probability chart: which colour is which move shape */
+.move-key { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 6px 14px; margin-top: 10px; font-size: 12.5px; }
+.move-key-item { display: flex; align-items: center; gap: 9px; opacity: 0.55; }
+.move-key-item.seen, .move-key-item:last-child { opacity: 1; }
+.move-key-line { flex: none; display: inline-block; width: 26px; height: 4px; border-radius: 2px; }
+.move-key-default { background: linear-gradient(90deg, #39ff88 0 33%, #ffd60a 33% 66%, #ff9500 66%); }
+.move-notes { margin-top: 8px; line-height: 1.45; }
+.move-notes summary { cursor: pointer; color: var(--accent-2); font-weight: 700; letter-spacing: 0.4px; }
+.move-list { list-style: none; margin: 6px 0 0; padding: 0; max-height: 220px; overflow-y: auto; }
+.move-list li { position: relative; padding: 3px 0 3px 36px; line-height: 1.35; }
+.move-list li .move-key-line { position: absolute; left: 0; top: 50%; margin-top: -2px; }
+
 /* ------------------------------------------------- no horizontal scrolling */
 /* Wide screens keep the single-line table (it is compressed to fit); anything
    narrower turns each match into a card whose figures wrap and stretch to the

@@ -46,6 +46,9 @@ CONFIG = {
     # purpose so tuning the real scored threshold never silently changes
     # this still-unproven, watch-only signal too.
     "velocity_floor_pp": 0.30,
+    # move_span_min_pp: smallest swing on a 1X2 line that gets a move shape (and a
+    # colour) on the chart; the engine's own "meaningful" 1X2 move size.
+    "move_span_min_pp": 0.80,
     "velocity_window_hours": 3.0,
     "velocity_min_window_hours": 0.25,  # 15 min - below this, a window is too short to be meaningful given real poll spacing
     "velocity_steam_ratio": 0.70,
@@ -346,7 +349,7 @@ def x2_displacement(moneyline_series: list[dict]) -> dict:
     return result
 
 
-def velocity_shape(moneyline_series: list[dict]) -> dict:
+def velocity_shape(moneyline_series: list[dict], side: str | None = None) -> dict:
     """Classifies HOW a 1X2 move happened over time, not just how big it
     got: a fast move concentrated in the recent window ("steam"), an old
     move that already happened and has since gone quiet ("drift"), a move
@@ -354,7 +357,9 @@ def velocity_shape(moneyline_series: list[dict]) -> dict:
     other way ("reversal"), or one that swung away from the opening line
     and came most of the way back by the time we're checking ("swung_back").
 
-    WATCH-ONLY - not wired into ah_score, x2_score, or the tier badge.
+    WATCH-ONLY - not wired into ah_score, x2_score, or the tier badge. The
+    dashboard no longer shows it as a card: move_spans() below replays this
+    classification per move and the shapes colour the 1X2 probability chart.
     Backtested against 2 real MJP rounds (32 matches, one confirmed non-
     jackpot test fixture excluded) on the AH line first: that line only
     ever moved in single atomic 0.25pt jumps, giving this classification
@@ -392,6 +397,9 @@ def velocity_shape(moneyline_series: list[dict]) -> dict:
       move is about (see x2_displacement()'s docstring for why "most
       positive" is the right test), and that side is now returned as
       `result["side"]`.
+
+    `side` forces the side to classify instead of picking the most positive
+    one; move_spans() uses it to read the shape of a swing on a specific line.
     """
     c = CONFIG
     configured_window = c["velocity_window_hours"]
@@ -419,7 +427,8 @@ def velocity_shape(moneyline_series: list[dict]) -> dict:
         outcome: (current[f"fair_{outcome}_prob"] - opening[f"fair_{outcome}_prob"]) * 100.0
         for outcome in ("home", "draw", "away")
     }
-    side = max(candidates, key=lambda k: candidates[k])
+    if side is None:
+        side = max(candidates, key=lambda k: candidates[k])
     field = f"fair_{side}_prob"
     total_change = candidates[side]
     result["side"] = side
@@ -464,6 +473,95 @@ def velocity_shape(moneyline_series: list[dict]) -> dict:
     else:
         result["label"] = "building"
     return result
+
+
+MOVE_SHAPES = ("steam", "building", "drift", "reversal", "swung_back")
+
+
+def _zigzag_pivot_indices(values: list[float], min_reversal_frac: float = 0.001) -> list[int]:
+    """Indices of the zigzag pivots of a chronological series - the same
+    swings as _zigzag_moves(), but returning where they happen."""
+    n = len(values)
+    if n < 2:
+        return []
+    pivots = [0]
+    direction = 0
+    ext = 0
+    for i in range(1, n):
+        v = values[i]
+        if direction == 0:
+            if v > values[0]:
+                direction, ext = 1, i
+            elif v < values[0]:
+                direction, ext = -1, i
+            continue
+        if direction == 1:
+            if v >= values[ext]:
+                ext = i
+            elif values[ext] - v >= min_reversal_frac:
+                pivots.append(ext)
+                direction, ext = -1, i
+        else:
+            if v <= values[ext]:
+                ext = i
+            elif v - values[ext] >= min_reversal_frac:
+                pivots.append(ext)
+                direction, ext = 1, i
+    pivots.append(ext if direction != 0 else n - 1)
+    return pivots
+
+
+def move_spans(moneyline_series: list[dict], min_move_pp: float | None = None) -> list[dict]:
+    """The individual moves on each 1X2 line, with the shape of each, for
+    colouring the 1X2 fair-probability chart.
+
+    A move is one zigzag swing of at least `min_move_pp` (default
+    CONFIG["move_span_min_pp"]) on a side's fair probability, from where it
+    started to where it stopped. Its shape is the label velocity_shape()
+    gives for that side at the moment the swing stopped - so the chart uses
+    the engine's own definitions (steam, building, drift, reversal, swung
+    back), applied to each move as it ended instead of only to the match's
+    latest state. A swing where the side already sits clearly below its
+    opening level is skipped (that is money leaving, not a move onto the
+    side), as is any swing the classifier calls quiet or has no history for;
+    those stretches keep the line's normal colour.
+
+    Returns [{"from", "to", "side", "label", "change_pp"}] sorted by start.
+    A pure function of the series, so it works for old matches too.
+    """
+    min_move = CONFIG["move_span_min_pp"] if min_move_pp is None else min_move_pp
+    valid = [
+        s for s in moneyline_series
+        if s.get("fair_home_prob") is not None and s.get("fair_draw_prob") is not None
+        and s.get("fair_away_prob") is not None and s.get("status") != "suspended"
+    ]
+    if len(valid) < 3:
+        return []
+    spans: list[dict] = []
+    for side in ("home", "draw", "away"):
+        values = [s[f"fair_{side}_prob"] for s in valid]
+        pivots = _zigzag_pivot_indices(values)
+        for a, b in zip(pivots, pivots[1:]):
+            change = (values[b] - values[a]) * 100.0
+            if abs(change) < min_move:
+                continue
+            r = velocity_shape(valid[: b + 1], side=side)
+            if r["label"] not in MOVE_SHAPES or r["total_change_pp"] < -CONFIG["velocity_floor_pp"]:
+                continue
+            # the swing's pivot can sit at the end of a flat stretch's start;
+            # the move really began where the line last stood still before going
+            start = a
+            while start + 1 < b and (values[start + 1] - values[start]) * (1 if change > 0 else -1) <= 1e-9:
+                start += 1
+            spans.append({
+                "from": valid[start]["captured_at"],
+                "to": valid[b]["captured_at"],
+                "side": side,
+                "label": r["label"],
+                "change_pp": change,
+            })
+    spans.sort(key=lambda g: (g["from"], g["side"]))
+    return spans
 
 
 def detect_contested(
@@ -550,7 +648,6 @@ def compute_match_score(
             "ah": ah_line_shift(spread_series),
             "x2": x2_displacement(moneyline_series),
             "favorite_strength": favorite_strength(spread_series, moneyline_series),
-            "velocity": velocity_shape(moneyline_series),
             "ah_score": 0.0,
             "x2_score": 0.0,
             "total_score": 0.0,
@@ -610,7 +707,6 @@ def compute_match_score(
         "ah": ah,
         "x2": x2,
         "favorite_strength": favorite_strength(spread_series, moneyline_series),
-        "velocity": velocity_shape(moneyline_series),
         "ah_score": ah_score,
         "x2_score": x2_score,
         "total_score": total,
@@ -666,8 +762,7 @@ async def compute_and_store_score(matchup_id: int, kickoff: datetime) -> dict:
         insert into signals (matchup_id, signal_type, direction, magnitude, detail_json)
         values ($1,'ah_line_shift',$2,$3,$4::jsonb),
                ($1,'x2_displacement',$5,$6,$7::jsonb),
-               ($1,'velocity_shape',$8,$9,$10::jsonb),
-               ($1,'favorite_strength',$11,$12,$13::jsonb)
+               ($1,'favorite_strength',$8,$9,$10::jsonb)
         """,
         matchup_id,
         result["ah"]["direction"],
@@ -676,12 +771,6 @@ async def compute_and_store_score(matchup_id: int, kickoff: datetime) -> dict:
         result["x2"]["direction"],
         result["x2"]["magnitude"],
         db.to_jsonb(result["x2"]),
-        # "direction" column repurposed as the shape label (steam/drift/
-        # building/reversal/quiet/None) - this signal has no home/away
-        # side of its own, it's watch-only, see velocity_shape() docstring.
-        result["velocity"]["label"],
-        abs(result["velocity"]["total_change_pp"]),
-        db.to_jsonb(result["velocity"]),
         # direction = the favorite side (home/away/None - pick'em), magnitude
         # = the 1X2 probability backing that read, fixed at the opening and
         # never re-derived, unlike every other signal here.

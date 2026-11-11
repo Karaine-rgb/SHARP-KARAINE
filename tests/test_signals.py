@@ -11,6 +11,8 @@ from app.signals import (
     detect_contested,
     favorite_strength,
     velocity_shape,
+    move_spans,
+    _zigzag_pivot_indices,
     x2_displacement,
 )
 
@@ -459,3 +461,65 @@ def test_limit_changes_do_not_affect_the_score():
     b = compute_match_score(ml_dropped, sp_dropped, KICKOFF, now=now)
     assert a["total_score"] == b["total_score"] and a["tier"] == b["tier"]
     assert a["total_score"] == pytest.approx(1.4 * a["ah_score"] + a["x2_score"])
+
+
+# ---------------------------------------------------------------------------
+# move_spans (colouring of the 1X2 probability chart)
+# ---------------------------------------------------------------------------
+
+def test_zigzag_pivot_indices_matches_the_swings():
+    values = [0.40, 0.41, 0.46, 0.45, 0.43, 0.47]
+    # up to 0.46 (index 2), down to 0.43 (index 4), up to 0.47 (index 5)
+    assert _zigzag_pivot_indices(values) == [0, 2, 4, 5]
+    assert _zigzag_pivot_indices([0.4]) == []
+
+
+def test_move_spans_steam_runs_from_where_the_move_started_to_where_it_stopped():
+    series = [
+        ml_point(48, 0.40, 0.30, 0.30),
+        ml_point(5, 0.40, 0.30, 0.30),
+        ml_point(2, 0.43, 0.29, 0.28),
+        ml_point(0.5, 0.46, 0.28, 0.26),  # +6pp on home inside the last 3 hours
+    ]
+    spans = move_spans(series)
+    home = [g for g in spans if g["side"] == "home"]
+    assert len(home) == 1
+    assert home[0]["label"] == "steam"
+    assert home[0]["from"] == t(5) and home[0]["to"] == t(0.5)
+    assert home[0]["change_pp"] == pytest.approx(6.0)
+
+
+def test_move_spans_ignores_swings_below_the_minimum_size():
+    series = [ml_point(48, 0.400, 0.30, 0.300), ml_point(30, 0.404, 0.298, 0.298), ml_point(1, 0.401, 0.30, 0.299)]
+    assert move_spans(series) == []
+
+
+def test_move_spans_labels_the_pullback_as_a_reversal():
+    series = [
+        ml_point(48, 0.40, 0.30, 0.30),
+        ml_point(40, 0.50, 0.26, 0.24),  # big move onto home, early
+        ml_point(0.5, 0.45, 0.28, 0.27),  # recently backing off, still above the opening
+    ]
+    home = [g for g in move_spans(series) if g["side"] == "home"]
+    assert [g["label"] for g in home][-1] == "reversal"
+    assert home[-1]["change_pp"] == pytest.approx(-5.0)
+
+
+def test_move_spans_skips_a_line_that_sits_below_its_opening_level():
+    # away fell and stays down: money leaving, not a move onto away
+    series = [
+        ml_point(48, 0.40, 0.30, 0.30),
+        ml_point(5, 0.40, 0.30, 0.30),
+        ml_point(0.5, 0.46, 0.28, 0.26),
+    ]
+    assert [g for g in move_spans(series) if g["side"] == "away"] == []
+
+
+def test_move_spans_needs_a_few_snapshots():
+    assert move_spans([ml_point(5, 0.4, 0.3, 0.3), ml_point(1, 0.5, 0.25, 0.25)]) == []
+
+
+def test_velocity_shape_can_be_forced_onto_a_side():
+    series = [ml_point(48, 0.40, 0.30, 0.30), ml_point(5, 0.40, 0.30, 0.30), ml_point(0.5, 0.46, 0.28, 0.26)]
+    assert velocity_shape(series)["side"] == "home"
+    assert velocity_shape(series, side="draw")["side"] == "draw"

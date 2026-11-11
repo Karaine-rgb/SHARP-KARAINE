@@ -750,6 +750,15 @@ removed from the tool. The raw limit amounts are still collected, charted in
 the raw data study, and exported, because the margin formulas in section 14
 use them. Scores are now 1.4 * AH + 1X2 only; the tier cutoffs are unchanged.
 
+**Note (tool change):** the "Move shape" card has been replaced by colouring
+on the 1X2 fair-probability chart. Each swing of 0.8pp or more on a line is
+coloured by the shape (steam, building, drift, reversal, swung back) the
+engine's `velocity_shape()` gives that side at the moment the swing stopped,
+from where it started to where it stopped; the line returns to its normal
+colour in between, and a key sits under the chart. The shapes remain
+watch-only and unproven as predictors; the per-poll `velocity_shape` signal
+rows are no longer stored since nothing reads them.
+
 ## 15. Open threads, if more data or time becomes available
 
 - With multi-bookmaker data (odds API), test the PDF's cross-bookmaker

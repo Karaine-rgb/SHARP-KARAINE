@@ -16,7 +16,7 @@ from app.pinnacle_client import ArcadiaClient, ArcadiaError
 from app.poller import poller
 from app.storage_guard import guard
 from app.settings_store import get_all_settings_masked, get_arcadia_api_key, set_setting
-from app.signals import favorite_strength
+from app.signals import favorite_strength, move_spans
 from app.ws import manager
 
 router = APIRouter(prefix="/api")
@@ -644,10 +644,10 @@ async def match_detail(matchup_id: int):
         matchup_id,
     )
 
-    # Full history of every velocity_shape / x2_displacement check ever run
+    # Full history of every x2_displacement check ever run
     # for this match - a fresh row is inserted every poll cycle, so "was
-    # this ever steam" or "was home ever leading" is already sitting in the
-    # data even after the label has since moved on to something else.
+    # home ever leading" is already sitting in the data even after the
+    # label has since moved on to something else.
     # Compressed to only the moments the label actually changed, not every
     # single poll that repeated it.
     async def _label_transitions(signal_type: str) -> list[dict]:
@@ -678,7 +678,6 @@ async def match_detail(matchup_id: int):
                 last_label = r["label"]
         return transitions
 
-    velocity_transitions = await _label_transitions("velocity_shape")
     x2_transitions = await _label_transitions("x2_displacement")
 
     # Full raw time-series for independent analysis, grouped by market so the
@@ -726,7 +725,7 @@ async def match_detail(matchup_id: int):
         "latest_score": dict(latest_score) if latest_score else None,
         "score_history": [dict(r) for r in score_history],
         "latest_signals": signals_by_type,
-        "velocity_transitions": velocity_transitions,
+        "move_spans": move_spans(series["moneyline"]),
         "x2_transitions": x2_transitions,
         "betslip_cutoffs": betslip_cutoffs,
         "series": {
