@@ -1,7 +1,7 @@
 # Research Findings: How Pinnacle's Market Actually Behaves
 
 This document consolidates everything learned from backtesting real Sharp
-Karaine data (98-115 real Megajackpot matches across five tracked rounds)
+Karaine data (up to 175 real Megajackpot matches across eight tracked rounds)
 against the question: **can pre-match Pinnacle odds data predict who wins?**
 
 The honest answer, after dozens of tests: **not reliably, on this data, at
@@ -36,6 +36,7 @@ proven.
 | "Steam" via the existing ratio-based classifier (`velocity_shape`, recent-vs-total change ratio) | 41.7% (n=48) - statistically indistinguishable from drift (41.2%), building (41.4%), and the 40.0% baseline | Rejected at full scale (an earlier 70-100% reading was from 2-5 decisive matches per label - noise) |
 | "Steam" via rolling Z-score anomaly detection (own price vs its recent rolling mean/stdev, floored to avoid division-by-near-zero) | 34-37% accuracy across every threshold tried (1.5 to 4.0) - below the 40% baseline at every single threshold | Rejected |
 | Team-total lines (closing Over probability) vs each team's actual goals | Well calibrated (+2.7pp on the 1.5 line, SE 3.4pp); movement adds nothing beyond the close (52.0%, n=50); implied-goals gap does not flag draws | No new edge - see section 13 |
+| Pinnacle's margin: movement, split across picks, "abnormal" margin vs liquidity, Shin z, Real CLV | No relationship to results in any form tried (0 of 30 tests below p=0.05 on 175 matches; 16 selection tests and a cross-validated tilt on 158 matches also null) | No edge, but it yields clean formulas for how the margin behaves - see section 14 |
 | **Pinnacle's opening AH line favorite** (the very first line posted, before any money/movement) | 45.7% overall (n=70, vs 38.6% baseline) - **68.1% (n=47) once draws are set aside** - and climbs with the size of the opening handicap (50% at n=18, 80% at n=5) | **Most promising single lead so far - see section 6** |
 
 ## 2. What we know for certain about the market's mechanics
@@ -619,8 +620,139 @@ markets already give. The mild lean toward Over on the 1.5 line (+2.7pp)
 is below significance at this sample. Worth re-checking only if more rounds
 accumulate.
 
-## 14. Open threads, if more data or time becomes available
+## 14. Pinnacle's margin: how it behaves, formulas, and whether it predicts anything
 
+Triggered by a research PDF on de-vigging and margin signals plus the
+"margin distribution" dashboard feature and export columns. "Margin" is the
+overround, (sum of 1/price) - 1; a pick's margin is its price-implied
+probability minus its de-vigged fair probability. The stored fair
+probabilities use the power de-vig. Full-game main lines only, snapshots at
+or before kickoff, suspended snapshots dropped, duplicate exports removed by
+snapshot id. Earlier tests in this section used 128 matches, later ones 158,
+the final structural work 175 unique matches (8 rounds, 42 draws). The
+formulas below are regression fits on that data, not derived laws.
+
+**14.1 How the margin behaves**
+
+| Hours to kickoff | 1X2 | AH | Total |
+|---|---|---|---|
+| >72h | 4.38% | 3.33% | 3.78% |
+| 24-72h | 4.33% | 3.12% | 3.56% |
+| 6-24h | 3.65% | 2.65% | 3.08% |
+| 1-6h | 3.37% | 2.41% | 2.85% |
+| <1h | 3.41% | 2.45% | 2.88% |
+
+It narrowed open to close in 174 of 175 matches for the 1X2 (it did in 127 of
+128, 125 of 128 and 126 of 128 for 1X2, AH and Total in the earlier run),
+averaging 4.95% to 3.72% (1X2), 3.58% to 2.62% (AH) and 3.98% to 3.03%
+(Total). The decline is mostly smooth drift, not steps at limit increases:
+summed over every consecutive 1X2 step, margin change was -22.1pp at
+limit-increase steps vs -194.3pp at all other steps (about 10% of the decline
+came at limit increases).
+
+**14.2 Formulas that held up (175 matches)**
+
+- Liquidity: 1X2 margin % = 10.0 - 0.77 * ln(limit), R^2 0.54 over 5,991
+  snapshots. Doubling the limit cuts the margin by about 0.5pp. Time to
+  kickoff alone explains little (R^2 0.07) and adds almost nothing once the
+  limit is in the model, so the time effect acts through liquidity.
+- Markets move together at the close: AH margin = 0.59 + 0.54 * (1X2 margin),
+  R^2 0.92; Total margin = 1.33 + 0.46 * (1X2 margin), R^2 0.90. At the
+  close the AH margin is about 0.70 of the 1X2 margin, the total about 0.81.
+- Shin's insider parameter on a three-way market: z = 0.50 * M (R^2 0.998).
+  So for the 1X2, z carries no information beyond the margin; it only becomes
+  informative when compared across bookmakers or against a benchmark. Mean z
+  was 0.025 at the open and 0.019 at the close; 11% of opening lines were
+  above 0.04 and 1% of closing lines. It does not approach zero near kickoff
+  because the margin does not.
+- Power exponent: k = 1 + M / H with H = -sum(pi * ln(pi)) over the raw implied
+  probabilities. Mean error 0.001, but up to 0.033 in the worst snapshot.
+- Real CLV identity: Real CLV = (1 + Raw CLV) / (1 + the pick's closing
+  mark-up) - 1 (exact). A random bet at the open averaged -5.2% Real CLV
+  against the de-vigged close, roughly the opening margin; raw CLV averaged
+  -1.2% because closing prices are better than opening ones as the margin
+  falls, which is why raw CLV misleads.
+- Cross-market consistency: on 50 matches with an AH 0.00 line, the AH home
+  probability and the draw-no-bet probability from the 1X2 agree within 0.07pp
+  on average (max 0.24pp), so there is no disagreement signal there.
+
+**14.3 De-vig methods and the favorite-longshot bias**
+
+All six methods in the PDF (multiplicative, additive, power, Shin, WPO, odds
+ratio; WPO implemented as margin deducted in proportion to the decimal odds,
+which follows the PDF's wording rather than a verified original formula) are
+statistically tied on closing 1X2 log loss over 175 matches: differences from
+power are at most 0.0016 and every interval spans zero (WPO's is
+-0.0029 to +0.0001). On a pick's fair probability they disagree by 0.54pp on
+average and 4.0pp at most, so the PDF's "worst-case devig" discipline matters
+only for extreme prices. For the AH and total half-lines (n=25 and 58) all six
+are identical to three decimals.
+
+Direction of the favorite-longshot bias is there but not established. After
+power de-vigging, the most likely outcome won 52.6% vs 45.5% implied (z=+1.93,
+p=0.054), the middle outcome 27.4% vs 29.5%, the least likely 20.0% vs 25.0%
+(p=0.12). A one-parameter fit p ~ pi^kappa gave kappa*=1.36 against
+Pinnacle's own mean k=1.04, with a bootstrap 95% interval of 0.94 to 2.14, so
+it cannot be told apart from the market's own compression at this sample.
+
+**14.4 Does any of it predict results? No.**
+
+- Margin movement (128 matches, 60 tests across open-to-close change, final-24h
+  change, margin level, and counts of widening events, against draws,
+  favorite wins, Over/Under, goal difference and a Brier measure of surprise):
+  none cleared a multiple-test bar. Closest: total-market widening events vs
+  Over (rho -0.19, p=0.04), expected by chance among 60 tests.
+- Split of the margin across picks: the split is an exact function of the
+  prices. Re-deriving 4,255 1X2 snapshots from raw prices with the power de-vig
+  matched the stored fair probabilities to 5e-11. An early pass looked
+  significant (e.g. away-pick mark-up vs surprise, p<0.001) but those results
+  were the favorite effect and this sample's low draw rate (19.5% drawn vs
+  26.1% implied), not the margin; they did not survive controlling for the
+  pick's fair probability and the total margin.
+- Margin-distribution rules (158 matches): choosing a pick by highest or lowest
+  margin share, or by share rising or falling most, and comparing how often it
+  happened with its own fair probability - 16 tests, none below p=0.05 (lowest
+  share: 28.5% vs 34.1% expected, p=0.11). A cross-validated tilt
+  p' ~ p^a * exp(b*share) against the best recalibration (sharpness and a
+  draw shift) gained 0.009 log-loss per match on held-out data for closing
+  share but inconsistently (repeats -0.001, +0.015, +0.017, +0.006), with a
+  bootstrap interval for b of -0.1 to +0.2; the change-in-share tilt lost
+  0.004.
+- "Abnormal margin" (margin minus what the liquidity formula predicts), margin at
+  open and margin change, at 175 matches against six outcomes: 30 tests, none
+  below p=0.05 (closest: |goal difference| vs abnormal margin at close,
+  rho -0.15, p=0.06).
+- Real CLV as a selector: picking the 1X2 outcome with the highest Real CLV
+  (open price vs de-vigged close) hit 42.3% vs 40.0% expected (z=+0.63,
+  p=0.53); with raw CLV 37.7% vs 38.3%; with the worst-case devig 41.7% vs
+  39.7%.
+
+**14.5 What this data cannot test**
+
+Most of the PDF's signals compare margin across bookmakers (soft-book longshot
+shading, sharp-vs-soft curves), involve one-way props, or in-play margin
+expansion. We have only Pinnacle's pre-kickoff prices, so those need the
+multi-bookmaker odds-API data. There are also no bet records, so a Real CLV
+for the user's own bets cannot be computed yet.
+
+**14.6 Related features built along the way**
+
+The match dashboard has a "Margin distribution over time" section (two charts
+per market: total margin plus each pick's margin, and each pick's share), and
+the CSV export has seven derived margin columns per row. Both are descriptive
+only: given the findings above, the split is computed from the prices and has
+not been shown to predict anything.
+
+## 15. Open threads, if more data or time becomes available
+
+- With multi-bookmaker data (odds API), test the PDF's cross-bookmaker
+  signals: Pinnacle vs soft-book margin by pick, and Pinnacle vs exchange
+  prices per outcome (a real benchmark for where Pinnacle shades prices).
+- A Real CLV tracker for the user's own bets (price taken vs de-vigged
+  close) would make the PDF's Real CLV usable.
+- Re-test the favorite-longshot exponent (kappa*=1.36, interval 0.94-2.14) as
+  more rounds arrive; draws in particular were over-priced in this sample
+  (24.0% vs 26.8%).
 - Re-test whether low-confidence favorites ("none" tier, currently 5/11
   draws) draw more than the 31.7% baseline as more rounds arrive (section
   12); the strong tier drawing least (3/17) is the same question from the
@@ -639,5 +771,5 @@ accumulate.
   product to build from what we actually know - a risk-management aid
   rather than a win-picker.
 
-*Last updated from a backtesting session covering 131 real Megajackpot
-matches across six September and October 2026 rounds.*
+*Last updated from a backtesting session covering up to 175 real Megajackpot
+matches across eight September and October 2026 rounds.*
