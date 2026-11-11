@@ -346,14 +346,56 @@ function fmtBytes(n) {
   return `${Math.max(1, Math.round(n / 1e3))} KB`;
 }
 
+function renderStorageUsage(u) {
+  const banner = document.getElementById("storage-banner");
+  banner.className = `pill storage-pill storage-${u.level}`;
+  banner.textContent = `DB ${fmtBytes(u.used_bytes)} / ${fmtBytes(u.limit_bytes)}`;
+  banner.title = `${fmtBytes(u.free_bytes)} free of the ${fmtBytes(u.limit_bytes)} free-tier limit - click for details`;
+  const alertEl = document.getElementById("storage-alert");
+  const pct = u.used_pct.toFixed(1);
+  const messages = {
+    warning: `Database is ${pct}% full (${fmtBytes(u.free_bytes)} left of the free tier). Delete old rounds you have downloaded before it fills up.`,
+    critical: `Database is ${pct}% full (${fmtBytes(u.free_bytes)} left). Collection pauses automatically at ${(u.pause_bytes / u.limit_bytes * 100).toFixed(0)}% to avoid the read-only lock - free space now.`,
+    paused: `DATA COLLECTION IS PAUSED - database is ${pct}% full. Delete downloaded rounds, then "Reclaim disk space" in Storage. It resumes by itself once there is room.`,
+  };
+  if (messages[u.level]) {
+    alertEl.className = `storage-alert storage-${u.level}`;
+    alertEl.textContent = messages[u.level];
+  } else {
+    alertEl.className = "storage-alert hidden";
+    alertEl.textContent = "";
+  }
+}
+
+async function refreshStorageBanner() {
+  try {
+    renderStorageUsage(await api("/storage/status"));
+  } catch (e) {
+    /* banner just keeps its last state */
+  }
+}
+document.getElementById("storage-banner").onclick = () => document.getElementById("btn-storage").click();
+
 let storageRounds = [];
 
 async function loadStorage() {
   const msg = document.getElementById("storage-message");
   const data = await api("/storage");
   storageRounds = data.rounds;
+  const u = data.usage;
+  renderStorageUsage(u);
+  const fill = document.getElementById("storage-bar-fill");
+  fill.style.width = `${Math.min(100, u.used_pct)}%`;
+  fill.className = `storage-bar-fill storage-${u.level}`;
   const top = data.tables.slice(0, 3).map((t) => `${t.name} ${fmtBytes(t.bytes)}`).join(" · ");
-  document.getElementById("storage-summary").textContent = `Database size ${fmtBytes(data.db_bytes)} (${top})`;
+  document.getElementById("storage-summary").textContent =
+    `Used ${fmtBytes(u.used_bytes)} of ${fmtBytes(u.limit_bytes)} (${u.used_pct.toFixed(1)}%) · ${fmtBytes(u.free_bytes)} free · ` +
+    `${fmtBytes(u.usable_bytes)} before collection pauses at ${(u.pause_bytes / u.limit_bytes * 100).toFixed(0)}% (${top})`;
+  const h = data.headroom;
+  const bits = [];
+  if (h.rounds_left != null) bits.push(`room for about ${h.rounds_left} more round${h.rounds_left === 1 ? "" : "s"} at the average size (${fmtBytes(h.avg_round_bytes)})`);
+  if (h.days_left != null) bits.push(`at the last 24 hours' collection rate (~${fmtBytes(h.bytes_per_day)}/day) it pauses in about ${h.days_left} day${h.days_left === 1 ? "" : "s"}`);
+  document.getElementById("storage-headroom").textContent = bits.length ? bits.join(" · ") : "";
   document.getElementById("storage-table-body").innerHTML = data.rounds
     .map((r, i) => {
       const csv = `/api/export/match-snapshots.csv?round_label=${encodeURIComponent(r.round_label)}`;
@@ -442,7 +484,13 @@ document.getElementById("btn-reclaim").onclick = async () => {
   try {
     const out = await api("/storage/reclaim", { method: "POST" });
     await loadStorage();
-    msg.textContent = `Database size ${fmtBytes(out.before_bytes)} -> ${fmtBytes(out.after_bytes)}.`;
+    let text = `Database size ${fmtBytes(out.before_bytes)} -> ${fmtBytes(out.after_bytes)}.`;
+    if (out.skipped && out.skipped.length) {
+      text += " Not rewritten (a compact copy needs free space the database does not have): " +
+        out.skipped.map((t) => `${t.table} needs ~${fmtBytes(t.needs_bytes)}, ${fmtBytes(t.free_bytes)} available`).join("; ") +
+        ". Delete more downloaded rounds first.";
+    }
+    msg.textContent = text;
   } catch (e) {
     msg.textContent = `Reclaim failed: ${e.message}`;
   } finally {
@@ -1017,7 +1065,9 @@ function connectWs() {
   };
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
-    if (msg.type === "match_update" || msg.type === "error") {
+    if (msg.type === "storage_paused" || msg.type === "storage_resumed") {
+      refreshStorageBanner();
+    } else if (msg.type === "match_update" || msg.type === "error") {
       loadSummary();
       if (currentDrilldownId === msg.matchup_id) openDrilldown(msg.matchup_id);
     } else if (msg.type === "auto_unmonitored") {
@@ -1034,6 +1084,8 @@ async function init() {
   await loadSummary();
   await loadDownloadRounds();
   connectWs();
+  refreshStorageBanner();
+  setInterval(refreshStorageBanner, 60000);
   setInterval(loadSummary, 30000);
   setInterval(tickCountdowns, 1000);
 }

@@ -17,6 +17,7 @@ from app import db, ingest, signals, telegram
 from app.config import settings
 from app.pinnacle_client import ArcadiaAuthError, ArcadiaClient, ArcadiaError
 from app.settings_store import get_arcadia_api_key
+from app.storage_guard import StorageGuard, guard as default_guard
 from app.ws import manager
 
 logger = logging.getLogger("poller")
@@ -34,7 +35,9 @@ class MatchState:
 
 
 class Poller:
-    def __init__(self) -> None:
+    def __init__(self, storage_guard: StorageGuard | None = None) -> None:
+        self._guard = storage_guard
+        self._storage_paused = False
         self._states: dict[int, MatchState] = {}
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
@@ -80,6 +83,7 @@ class Poller:
             "from matchups where is_monitored = true"
         )
         now = datetime.now(timezone.utc)
+        blocked = await self._storage_blocked()
         for row in rows:
             matchup_id = row["id"]
             if now >= row["start_time"]:
@@ -90,12 +94,30 @@ class Poller:
                 # snapshot reflects pre-match sharp money. No grace window.
                 await self._auto_unmonitor(row, "kickoff reached - no data collected after kickoff")
                 continue
+            if blocked:
+                continue  # database near its size limit: no new snapshots
             state = self._states.setdefault(matchup_id, MatchState(settings.poll_base_interval))
             forced = matchup_id in self.force_poll_ids
             if not forced and now < state.next_due:
                 continue
             self.force_poll_ids.discard(matchup_id)
             await self._poll_one(row, state, now)
+
+    async def _storage_blocked(self) -> bool:
+        if self._guard is None:
+            return False
+        blocked = await self._guard.collection_blocked()
+        if blocked != self._storage_paused:
+            self._storage_paused = blocked
+            usage = await self._guard.usage()
+            logger.warning(
+                "Collection %s: database is %.1f%% of its size limit",
+                "PAUSED" if blocked else "resumed", usage["used_pct"],
+            )
+            await manager.broadcast(
+                {"type": "storage_paused" if blocked else "storage_resumed", "used_pct": usage["used_pct"]}
+            )
+        return blocked
 
     async def _auto_unmonitor(self, row, reason: str) -> None:
         matchup_id = row["id"]
@@ -174,4 +196,4 @@ def _summarize(result: dict) -> str:
     return ", ".join(parts)
 
 
-poller = Poller()
+poller = Poller(storage_guard=default_guard)

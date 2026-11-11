@@ -19,10 +19,13 @@
         <select id="download-round-select"><option value="">All rounds (one big file)</option></select>
         <a id="btn-download-data" href="/api/export/match-snapshots.csv" class="btn" download>Download</a>
       </label>
+      <button id="storage-banner" class="pill storage-pill" title="Database size vs the free-tier limit - click for details">DB …</button>
       <button id="btn-storage" class="btn">Storage</button>
       <button id="btn-settings" class="btn">Settings</button>
     </div>
   </header>
+
+  <div id="storage-alert" class="storage-alert hidden"></div>
 
   <main>
     <div class="round-bar">
@@ -73,7 +76,9 @@
   <div id="modal-storage" class="modal hidden">
     <div class="modal-card modal-wide">
       <h2>Storage &amp; rounds</h2>
+      <div class="storage-bar"><div id="storage-bar-fill" class="storage-bar-fill"></div></div>
       <div id="storage-summary" class="small"></div>
+      <div id="storage-headroom" class="small"></div>
       <p class="dim small">
         Deleting a round permanently removes its matches and every price snapshot, signal and score
         for them. A round that has never been downloaded asks for an extra confirmation before it can

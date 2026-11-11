@@ -2,17 +2,20 @@ import pytest
 from fastapi import HTTPException
 
 from app import api
+from app.storage_guard import StorageGuard
 
 
 @pytest.fixture
 def fake_db(monkeypatch):
     state = {"matches": [], "deleted": [], "executed": [], "snap_count": 0, "fetch_queries": [],
-             "downloaded": True, "many": []}
+             "downloaded": True, "many": [], "db_size": 5000, "snaps_24h": 20, "reclaim_sizes": []}
 
     async def fetch(query, *params):
         state["fetch_queries"].append((query, params))
         if "from matchups where" in query:
             return state["matches"]
+        if "n_live_tup" in query:
+            return state["reclaim_sizes"]
         if "pg_class" in query:
             return [{"name": "market_snapshots", "bytes": 800}, {"name": "signals", "bytes": 200}, {"name": "app_settings", "bytes": 5}]
         if "left join market_snapshots" in query:
@@ -33,7 +36,9 @@ def fake_db(monkeypatch):
 
     async def fetchval(query, *params):
         if "pg_database_size" in query:
-            return 12345
+            return state["db_size"]
+        if "captured_at >" in query:
+            return state["snaps_24h"]
         return state["snap_count"]
 
     async def execute(query, *params):
@@ -45,6 +50,11 @@ def fake_db(monkeypatch):
     monkeypatch.setattr(api.db, "fetchrow", fetchrow)
     monkeypatch.setattr(api.db, "executemany", executemany)
     monkeypatch.setattr(api.db, "execute", execute)
+
+    async def size():
+        return state["db_size"]
+
+    monkeypatch.setattr(api, "guard", StorageGuard(10_000, 80, 90, 95, size_fn=size))
     return state
 
 
@@ -94,7 +104,7 @@ async def test_delete_unlabeled_uses_null_condition(fake_db):
 @pytest.mark.asyncio
 async def test_storage_overview_estimates_round_size(fake_db):
     out = await api.storage_overview()
-    assert out["db_bytes"] == 12345
+    assert out["db_bytes"] == 5000
     a, b = out["rounds"]
     # data tables total 1000 bytes (app_settings excluded); A holds 30 of 40 snapshots
     assert a["est_bytes"] == 750 and b["est_bytes"] == 250
@@ -102,13 +112,50 @@ async def test_storage_overview_estimates_round_size(fake_db):
 
 
 @pytest.mark.asyncio
-async def test_reclaim_vacuums_each_data_table(fake_db):
-    out = await api.reclaim_space()
-    assert out["ok"] is True
-    assert [q for q, _ in fake_db["executed"]] == [
-        "vacuum full market_snapshots", "vacuum full signals", "vacuum full match_scores",
-        "vacuum full alerts_sent", "vacuum full matchups",
+async def test_reclaim_vacuums_smallest_tables_first(fake_db):
+    fake_db["reclaim_sizes"] = [
+        {"name": "market_snapshots", "bytes": 800, "live": 100, "dead": 0},
+        {"name": "signals", "bytes": 200, "live": 10, "dead": 0},
+        {"name": "matchups", "bytes": 50, "live": 5, "dead": 5},
     ]
+    out = await api.reclaim_space()
+    assert out["ok"] is True and out["skipped"] == []
+    assert [q for q, _ in fake_db["executed"]] == [
+        "vacuum full matchups", "vacuum full signals", "vacuum full market_snapshots",
+    ]
+    assert out["rewritten"] == ["matchups", "signals", "market_snapshots"]
+
+
+@pytest.mark.asyncio
+async def test_reclaim_skips_a_table_whose_copy_would_not_fit(fake_db):
+    fake_db["db_size"] = 9000  # limit 10_000, 97% = 9700 -> only 700 bytes of room
+    fake_db["reclaim_sizes"] = [
+        {"name": "market_snapshots", "bytes": 5000, "live": 100, "dead": 0},
+        {"name": "signals", "bytes": 200, "live": 10, "dead": 0},
+    ]
+    out = await api.reclaim_space()
+    assert out["rewritten"] == ["signals"]
+    assert [s["table"] for s in out["skipped"]] == ["market_snapshots"]
+    assert out["skipped"][0]["needs_bytes"] > out["skipped"][0]["free_bytes"]
+    assert [q for q, _ in fake_db["executed"]] == ["vacuum full signals"]
+
+
+@pytest.mark.asyncio
+async def test_storage_overview_reports_headroom(fake_db):
+    out = await api.storage_overview()
+    assert out["usage"]["used_pct"] == 50.0 and out["usage"]["level"] == "ok"
+    h = out["headroom"]
+    # pause line 9500, used 5000 -> 4500 usable; rounds average (750+250)/2 = 500 -> 9 more rounds
+    assert h["avg_round_bytes"] == 500 and h["rounds_left"] == 9
+    # 20 snapshots in 24h at 1000 data bytes / 40 snapshots = 25 bytes each -> 500/day -> 9 days
+    assert h["bytes_per_day"] == 500 and h["days_left"] == 9.0
+
+
+@pytest.mark.asyncio
+async def test_storage_status_is_the_cheap_usage_check(fake_db):
+    fake_db["db_size"] = 9600
+    out = await api.storage_status()
+    assert out["level"] == "paused" and out["collection_paused"] is True and out["free_bytes"] == 400
 
 
 @pytest.mark.asyncio

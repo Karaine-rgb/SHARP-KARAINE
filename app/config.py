@@ -41,6 +41,16 @@ class Settings:
     poll_jitter_min: float = float(_env("POLL_JITTER_MIN", "1.0"))
     poll_jitter_max: float = float(_env("POLL_JITTER_MAX", "3.5"))
 
+    # Supabase free tier: the project goes read-only above 500 MB, which stops
+    # all new data. Decimal MB (the smaller reading of "500 MB") on purpose -
+    # the guard errs on the side of stopping early. Thresholds are percent of
+    # the limit: warn / critical are display levels, pause stops the poller
+    # writing new snapshots until space is freed.
+    db_limit_mb: float = float(_env("DB_LIMIT_MB", "500"))
+    db_warn_pct: float = float(_env("DB_WARN_PCT", "80"))
+    db_critical_pct: float = float(_env("DB_CRITICAL_PCT", "90"))
+    db_pause_pct: float = float(_env("DB_PAUSE_PCT", "95"))
+
     port: int = int(_env("PORT", "8000"))
 
 

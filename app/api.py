@@ -13,6 +13,7 @@ from app import db
 from app.odds import MARGIN_COLUMNS, margin_columns
 from app.pinnacle_client import ArcadiaClient, ArcadiaError
 from app.poller import poller
+from app.storage_guard import guard
 from app.settings_store import get_all_settings_masked, get_arcadia_api_key, set_setting
 from app.signals import favorite_strength
 from app.ws import manager
@@ -309,6 +310,7 @@ async def storage_overview():
         order by min(m.start_time) desc
         """
     )
+    usage = await guard.usage(force=True)
     table_list = [{"name": t["name"], "bytes": int(t["bytes"])} for t in tables]
     data_bytes = sum(t["bytes"] for t in table_list if t["name"] in _DATA_TABLES)
     total_snaps = sum(int(r["snapshot_count"]) for r in rounds) or 1
@@ -320,7 +322,39 @@ async def storage_overview():
         d["est_bytes"] = int(data_bytes * d["snapshot_count"] / total_snaps)
         d["downloaded_snapshots"] = int(d["downloaded_snapshots"]) if d.get("downloaded_snapshots") is not None else None
         out_rounds.append(d)
-    return {"db_bytes": int(db_bytes), "tables": table_list, "rounds": out_rounds}
+
+    # Headroom: how many more rounds of the average size fit before the
+    # pause line, and how long at the last 24 hours' collection rate.
+    sized = [r["est_bytes"] for r in out_rounds if r["snapshot_count"] > 0]
+    avg_round = int(sum(sized) / len(sized)) if sized else 0
+    snaps_24h = int(
+        await db.fetchval("select count(*) from market_snapshots where captured_at > now() - interval '24 hours'") or 0
+    )
+    bytes_per_snapshot = data_bytes / total_snaps if out_rounds else 0
+    bytes_per_day = int(snaps_24h * bytes_per_snapshot)
+    headroom = {
+        "avg_round_bytes": avg_round,
+        "rounds_left": int(usage["usable_bytes"] // avg_round) if avg_round else None,
+        "snapshots_24h": snaps_24h,
+        "bytes_per_day": bytes_per_day,
+        "days_left": round(usage["usable_bytes"] / bytes_per_day, 1) if bytes_per_day else None,
+    }
+    return {
+        "db_bytes": int(db_bytes),
+        "usage": usage,
+        "headroom": headroom,
+        "tables": table_list,
+        "rounds": out_rounds,
+    }
+
+
+@router.get("/storage/status")
+async def storage_status():
+    """Cheap database-size check for the dashboard's always-visible banner:
+    used / limit / free, the warn-critical-paused level, and whether the
+    poller has paused collection to stay under the free-tier limit.
+    """
+    return await guard.usage(force=True)
 
 
 @router.delete("/rounds")
@@ -377,15 +411,45 @@ async def reclaim_space():
     database's size accounting (VACUUM FULL). Plain deletes only mark space
     reusable; the free-tier size meter does not drop until this runs. It
     takes an exclusive lock on each table while it works.
+
+    VACUUM FULL writes a compact copy of a table before dropping the old one,
+    so it needs free space about equal to the table's live data. That would
+    push a nearly full database over the limit, so each table is rewritten
+    only if the copy fits under the limit with a safety margin; the smallest
+    tables go first (their space frees up room for the larger ones). Tables
+    that don't fit are reported, not attempted.
     """
     before = int(await db.fetchval(_SIZE_QUERY))
-    try:
-        for table in (*_DATA_TABLES, "matchups"):
-            await db.execute(f"vacuum full {table}")
-    except Exception as exc:  # surface the database's own message to the UI
-        raise HTTPException(status_code=500, detail=f"reclaim failed: {exc}")
+    limit = guard.limit_bytes
+    sizes = await db.fetch(
+        """
+        select c.relname as name,
+               pg_total_relation_size(c.oid) as bytes,
+               coalesce(st.n_live_tup, 0) as live,
+               coalesce(st.n_dead_tup, 0) as dead
+        from pg_class c
+        join pg_namespace n on n.oid = c.relnamespace
+        left join pg_stat_user_tables st on st.relid = c.oid
+        where n.nspname = 'public' and c.relkind = 'r' and c.relname = any($1::text[])
+        """,
+        [*_DATA_TABLES, "matchups"],
+    )
+    rewritten, skipped = [], []
+    for t in sorted(sizes, key=lambda r: r["bytes"]):
+        total_rows = t["live"] + t["dead"]
+        live_fraction = t["live"] / total_rows if total_rows else 1.0
+        need = int(t["bytes"] * live_fraction * 1.1)
+        used = int(await db.fetchval(_SIZE_QUERY))
+        if used + need > limit * 0.97:
+            skipped.append({"table": t["name"], "needs_bytes": need, "free_bytes": max(0, int(limit * 0.97) - used)})
+            continue
+        try:
+            await db.execute(f"vacuum full {t['name']}")
+        except Exception as exc:  # surface the database's own message to the UI
+            raise HTTPException(status_code=500, detail=f"reclaim failed on {t['name']}: {exc}")
+        rewritten.append(t["name"])
     after = int(await db.fetchval(_SIZE_QUERY))
-    return {"ok": True, "before_bytes": before, "after_bytes": after}
+    return {"ok": True, "before_bytes": before, "after_bytes": after, "rewritten": rewritten, "skipped": skipped}
 
 
 async def _record_downloads(rows) -> None:

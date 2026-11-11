@@ -246,3 +246,16 @@ tbody tr:hover { background: var(--bg-elevated); }
 #storage-table td:first-child { white-space: normal; word-break: break-word; max-width: 300px; }
 #storage-table td:last-child { text-align: right; }
 .never-downloaded { color: #ff9f0a; }
+
+.storage-pill { cursor: pointer; font-family: var(--mono); white-space: nowrap; }
+.storage-ok { color: #30d158; border-color: #30d158; }
+.storage-warning { color: #ff9f0a; border-color: #ff9f0a; }
+.storage-critical, .storage-paused { color: #ff453a; border-color: #ff453a; }
+.storage-alert { padding: 8px 20px; font-size: 12px; border-bottom: 1px solid var(--border); }
+.storage-alert.storage-warning { background: rgba(255, 159, 10, 0.1); }
+.storage-alert.storage-critical, .storage-alert.storage-paused { background: rgba(255, 69, 58, 0.12); font-weight: bold; }
+.storage-bar { height: 8px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; margin: 6px 0; }
+.storage-bar-fill { height: 100%; width: 0; background: #30d158; }
+.storage-bar-fill.storage-warning { background: #ff9f0a; }
+.storage-bar-fill.storage-critical, .storage-bar-fill.storage-paused { background: #ff453a; }
+#storage-headroom { margin: 4px 0 8px; color: var(--text-dim); }
