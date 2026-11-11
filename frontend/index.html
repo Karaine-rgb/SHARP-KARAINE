@@ -81,8 +81,8 @@
       <div id="storage-headroom" class="small"></div>
       <p class="dim small">
         Deleting a round permanently removes its matches and every price snapshot, signal and score
-        for them. A round that has never been downloaded asks for an extra confirmation before it can
-        be deleted. "Downloaded" means the CSV was served by the app, not that your browser saved it. The size per round is
+        for them. It disappears at once and the data is cleared in the background. A round that has
+        never been downloaded asks for an extra confirmation before it can be deleted. "Downloaded" means the CSV was served by the app, not that your browser saved it. The size per round is
         an estimate. Space freed by a delete is reused by new data right away, but the database size
         meter only drops after "Reclaim disk space".
       </p>
@@ -96,6 +96,18 @@
       <div class="modal-actions">
         <button class="btn" id="btn-reclaim">Reclaim disk space</button>
         <button class="btn btn-ghost" id="btn-storage-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Yes / No confirmation (used by the Storage panel) -->
+  <div id="modal-confirm" class="modal hidden">
+    <div class="modal-card">
+      <h2 id="confirm-title">Are you sure?</h2>
+      <div id="confirm-text" class="small"></div>
+      <div class="modal-actions">
+        <button class="btn btn-danger" id="confirm-yes">Yes</button>
+        <button class="btn btn-ghost" id="confirm-no">No</button>
       </div>
     </div>
   </div>

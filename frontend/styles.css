@@ -259,3 +259,5 @@ tbody tr:hover { background: var(--bg-elevated); }
 .storage-bar-fill.storage-warning { background: #ff9f0a; }
 .storage-bar-fill.storage-critical, .storage-bar-fill.storage-paused { background: #ff453a; }
 #storage-headroom { margin: 4px 0 8px; color: var(--text-dim); }
+#modal-confirm { z-index: 1000; }
+#confirm-text { white-space: pre-line; margin: 8px 0; color: var(--text-dim); }

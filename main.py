@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import db
+from app import db, round_delete
 from app.api import router as api_router
 from app.poller import poller
 
@@ -22,6 +22,7 @@ FRONTEND_DIR = Path(__file__).parent / "frontend"
 async def lifespan(app: FastAPI):
     await db.init_pool()
     await db.ensure_schema()
+    round_delete.start_purge()  # finish any deletion interrupted by a restart
     await poller.start()
     yield
     await poller.stop()

@@ -8,7 +8,7 @@ from app.storage_guard import StorageGuard
 @pytest.fixture
 def fake_db(monkeypatch):
     state = {"matches": [], "deleted": [], "executed": [], "snap_count": 0, "fetch_queries": [],
-             "downloaded": True, "many": [], "db_size": 5000, "snaps_24h": 20, "reclaim_sizes": []}
+             "downloaded": True, "many": [], "db_size": 5000, "snaps_24h": 20, "reclaim_sizes": [], "pending": 0, "purges": 0}
 
     async def fetch(query, *params):
         state["fetch_queries"].append((query, params))
@@ -39,6 +39,8 @@ def fake_db(monkeypatch):
             return state["db_size"]
         if "captured_at >" in query:
             return state["snaps_24h"]
+        if "from matchups where mjp_round_label" in query:
+            return state["pending"]
         return state["snap_count"]
 
     async def execute(query, *params):
@@ -55,21 +57,18 @@ def fake_db(monkeypatch):
         return state["db_size"]
 
     monkeypatch.setattr(api, "guard", StorageGuard(10_000, 80, 90, 95, size_fn=size))
+
+    def start_purge():
+        state["purges"] += 1
+
+    monkeypatch.setattr(api.round_delete, "start_purge", start_purge)
     return state
-
-
-@pytest.mark.asyncio
-async def test_delete_requires_matching_confirm(fake_db):
-    with pytest.raises(HTTPException) as e:
-        await api.delete_round(round_label="A", confirm="a")
-    assert e.value.status_code == 400
-    assert fake_db["executed"] == []
 
 
 @pytest.mark.asyncio
 async def test_delete_unknown_round_404(fake_db):
     with pytest.raises(HTTPException) as e:
-        await api.delete_round(round_label="A", confirm="A")
+        await api.delete_round(round_label="A")
     assert e.value.status_code == 404
 
 
@@ -77,28 +76,36 @@ async def test_delete_unknown_round_404(fake_db):
 async def test_delete_refuses_monitored_round(fake_db):
     fake_db["matches"] = [{"id": 1, "is_monitored": False}, {"id": 2, "is_monitored": True}]
     with pytest.raises(HTTPException) as e:
-        await api.delete_round(round_label="A", confirm="A")
+        await api.delete_round(round_label="A")
     assert e.value.status_code == 409
-    assert fake_db["executed"] == []
+    assert fake_db["executed"] == [] and fake_db["purges"] == 0
 
 
 @pytest.mark.asyncio
-async def test_delete_removes_each_match_and_reports_counts(fake_db):
+async def test_delete_hides_matches_at_once_and_purges_in_the_background(fake_db):
     fake_db["matches"] = [{"id": 1, "is_monitored": False}, {"id": 2, "is_monitored": False}]
-    fake_db["snap_count"] = 77
-    out = await api.delete_round(round_label="A/B (x)", confirm="A/B (x)")
-    assert out == {"ok": True, "deleted_matches": 2, "deleted_snapshots": 77}
-    deletes = [(q, p) for q, p in fake_db["executed"] if "delete from matchups" in q]
-    assert [p for _, p in deletes] == [(1,), (2,)]
-    assert fake_db["executed"][-1] == ("delete from round_downloads where round_label = $1", ("A/B (x)",))
+    out = await api.delete_round(round_label="A/B (x)")
+    assert out == {"ok": True, "deleted_matches": 2, "purging_in_background": True}
+    (hide_q, hide_params), (dl_q, dl_params) = fake_db["executed"]
+    assert hide_q.startswith("update matchups set mjp_round_label") and hide_params == ("__deleting__", [1, 2])
+    assert dl_q == "delete from round_downloads where round_label = $1" and dl_params == ("A/B (x)",)
+    assert fake_db["purges"] == 1  # the slow delete is not awaited by the request
+    assert not any("delete from market_snapshots" in q for q, _ in fake_db["executed"])
 
 
 @pytest.mark.asyncio
 async def test_delete_unlabeled_uses_null_condition(fake_db):
     fake_db["matches"] = [{"id": 5, "is_monitored": False}]
-    await api.delete_round(round_label="(unlabeled)", confirm="(unlabeled)")
+    await api.delete_round(round_label="(unlabeled)")
     q, params = fake_db["fetch_queries"][0]
     assert "mjp_round_label is null" in q and params == ()
+
+
+@pytest.mark.asyncio
+async def test_cannot_target_the_hidden_marker_label(fake_db):
+    with pytest.raises(HTTPException) as e:
+        await api.delete_round(round_label="__deleting__")
+    assert e.value.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -163,10 +170,10 @@ async def test_delete_never_downloaded_round_needs_explicit_override(fake_db):
     fake_db["matches"] = [{"id": 1, "is_monitored": False}]
     fake_db["downloaded"] = False
     with pytest.raises(HTTPException) as e:
-        await api.delete_round(round_label="A", confirm="A")
+        await api.delete_round(round_label="A")
     assert e.value.status_code == 409 and e.value.detail.startswith("never_downloaded")
     assert fake_db["executed"] == []
-    out = await api.delete_round(round_label="A", confirm="A", allow_undownloaded=True)
+    out = await api.delete_round(round_label="A", allow_undownloaded=True)
     assert out["deleted_matches"] == 1
 
 
@@ -174,7 +181,7 @@ async def test_delete_never_downloaded_round_needs_explicit_override(fake_db):
 async def test_downloaded_round_deletes_without_override(fake_db):
     fake_db["matches"] = [{"id": 1, "is_monitored": False}]
     fake_db["downloaded"] = True
-    out = await api.delete_round(round_label="A", confirm="A")
+    out = await api.delete_round(round_label="A")
     assert out["ok"] is True
 
 
@@ -211,3 +218,19 @@ async def test_rename_moves_the_download_record(fake_db):
     sqls = [q for q, _ in fake_db["executed"]]
     assert any(q.startswith("update round_downloads set round_label") for q in sqls)
     assert any(q.startswith("delete from round_downloads where round_label") for q in sqls)
+
+
+@pytest.mark.asyncio
+async def test_reclaim_waits_for_a_pending_purge(fake_db):
+    fake_db["pending"] = 4
+    with pytest.raises(HTTPException) as e:
+        await api.reclaim_space()
+    assert e.value.status_code == 409
+    assert fake_db["executed"] == []
+
+
+@pytest.mark.asyncio
+async def test_storage_overview_reports_pending_deletes(fake_db):
+    fake_db["pending"] = 3
+    out = await api.storage_overview()
+    assert out["pending_delete_matches"] == 3

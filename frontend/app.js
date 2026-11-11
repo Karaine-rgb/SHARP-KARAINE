@@ -376,7 +376,27 @@ async function refreshStorageBanner() {
 }
 document.getElementById("storage-banner").onclick = () => document.getElementById("btn-storage").click();
 
+function askYesNo(title, text, yesLabel = "Yes") {
+  return new Promise((resolve) => {
+    const modal = document.getElementById("modal-confirm");
+    const yes = document.getElementById("confirm-yes");
+    const no = document.getElementById("confirm-no");
+    document.getElementById("confirm-title").textContent = title;
+    document.getElementById("confirm-text").textContent = text;
+    yes.textContent = yesLabel;
+    const done = (answer) => {
+      modal.classList.add("hidden");
+      yes.onclick = no.onclick = null;
+      resolve(answer);
+    };
+    yes.onclick = () => done(true);
+    no.onclick = () => done(false);
+    modal.classList.remove("hidden");
+  });
+}
+
 let storageRounds = [];
+let pendingPoll = null;
 
 async function loadStorage() {
   const msg = document.getElementById("storage-message");
@@ -418,7 +438,28 @@ async function loadStorage() {
       </tr>`;
     })
     .join("");
-  msg.textContent = "";
+  const pending = data.pending_delete_matches || 0;
+  document.getElementById("btn-reclaim").disabled = pending > 0;
+  if (pending > 0) {
+    msg.textContent = `Removing ${pending} deleted match${pending === 1 ? "" : "es"} in the background...`;
+    if (!pendingPoll) pendingPoll = setTimeout(pollPending, 2000);
+  } else {
+    msg.textContent = "";
+  }
+  return data;
+}
+
+async function pollPending() {
+  pendingPoll = null;
+  try {
+    const data = await loadStorage();
+    if (data && !data.pending_delete_matches) {
+      document.getElementById("storage-message").textContent =
+        "Deleted data cleared. Run \"Reclaim disk space\" to lower the size meter.";
+    }
+  } catch (e) {
+    /* modal may be closed or the server restarting; stop polling */
+  }
 }
 
 document.getElementById("btn-storage").onclick = () => {
@@ -438,18 +479,18 @@ document.getElementById("storage-table-body").onclick = async (ev) => {
   if (!btn) return;
   const r = storageRounds[Number(btn.dataset.deleteRound)];
   const msg = document.getElementById("storage-message");
-  const typed = window.prompt(
-    `Permanently delete "${r.round_label}"?\n\n${r.match_count} matches and ${r.snapshot_count.toLocaleString()} snapshots (~${fmtBytes(r.est_bytes)}) will be removed and cannot be recovered.\n\nType the round label exactly to confirm:`
+  const sure = await askYesNo(
+    "Are you sure you want to delete this round?",
+    `${r.round_label}\n${r.match_count} matches, ${r.snapshot_count.toLocaleString()} snapshots (~${fmtBytes(r.est_bytes)}). This cannot be undone.`,
+    "Yes, delete"
   );
-  if (typed === null) return;
-  if (typed !== r.round_label) {
-    msg.textContent = "Label did not match - nothing was deleted.";
-    return;
-  }
+  if (!sure) return;
   const neverDownloaded = !r.downloaded_at;
   if (neverDownloaded) {
-    const ok = window.confirm(
-      `"${r.round_label}" has NEVER been downloaded.\n\nIf you delete it, this data is gone for good - there is no copy anywhere else.\n\nIs it really okay to delete it without a download?`
+    const ok = await askYesNo(
+      "This round has never been downloaded",
+      `If you delete "${r.round_label}", this data is gone for good - there is no copy anywhere else.\n\nIs it really okay to delete it without a download?`,
+      "Yes, delete anyway"
     );
     if (!ok) {
       msg.textContent = "Not deleted - download the CSV first if you want to keep this round.";
@@ -457,15 +498,15 @@ document.getElementById("storage-table-body").onclick = async (ev) => {
     }
   }
   btn.disabled = true;
-  msg.textContent = "Deleting...";
   try {
     const out = await api(
-      `/rounds?round_label=${encodeURIComponent(r.round_label)}&confirm=${encodeURIComponent(typed)}` +
-        (neverDownloaded ? "&allow_undownloaded=true" : ""),
+      `/rounds?round_label=${encodeURIComponent(r.round_label)}` + (neverDownloaded ? "&allow_undownloaded=true" : ""),
       { method: "DELETE" }
     );
-    await loadStorage();
-    msg.textContent = `Deleted ${out.deleted_matches} matches and ${out.deleted_snapshots.toLocaleString()} snapshots. Run "Reclaim disk space" to lower the size meter.`;
+    const data = await loadStorage();
+    if (!data.pending_delete_matches) {
+      msg.textContent = `Deleted ${out.deleted_matches} matches. Run "Reclaim disk space" to lower the size meter.`;
+    }
     await loadRounds();
     await loadSummary();
     await loadDownloadRounds();
@@ -477,7 +518,12 @@ document.getElementById("storage-table-body").onclick = async (ev) => {
 
 document.getElementById("btn-reclaim").onclick = async () => {
   const msg = document.getElementById("storage-message");
-  if (!confirm("Reclaim disk space? This briefly locks the data tables while they are rewritten (live polling pauses until it finishes) and can take a minute on a large database.")) return;
+  const go = await askYesNo(
+    "Reclaim disk space?",
+    "This briefly locks the data tables while they are rewritten (live polling pauses until it finishes) and can take a minute on a large database.",
+    "Yes, reclaim"
+  );
+  if (!go) return;
   const btn = document.getElementById("btn-reclaim");
   btn.disabled = true;
   msg.textContent = "Reclaiming...";

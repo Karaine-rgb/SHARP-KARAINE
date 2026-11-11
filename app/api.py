@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Response, WebSocket, WebSocketDisc
 from pydantic import BaseModel
 
 from app import db
+from app import round_delete
 from app.odds import MARGIN_COLUMNS, margin_columns
 from app.pinnacle_client import ArcadiaClient, ArcadiaError
 from app.poller import poller
@@ -259,9 +260,11 @@ async def list_rounds():
             max(start_time) as latest_kickoff,
             bool_or(is_monitored) as is_active
         from matchups
+        where mjp_round_label is distinct from $1
         group by coalesce(mjp_round_label, '(unlabeled)')
         order by min(start_time) desc
-        """
+        """,
+        round_delete.DELETING_LABEL,
     )
     return [dict(r) for r in rows]
 
@@ -306,9 +309,11 @@ async def storage_overview():
         from matchups m
         left join market_snapshots s on s.matchup_id = m.id
         left join round_downloads d on d.round_label = coalesce(m.mjp_round_label, '(unlabeled)')
+        where m.mjp_round_label is distinct from $1
         group by 1
         order by min(m.start_time) desc
-        """
+        """,
+        round_delete.DELETING_LABEL,
     )
     usage = await guard.usage(force=True)
     table_list = [{"name": t["name"], "bytes": int(t["bytes"])} for t in tables]
@@ -343,6 +348,7 @@ async def storage_overview():
         "db_bytes": int(db_bytes),
         "usage": usage,
         "headroom": headroom,
+        "pending_delete_matches": await round_delete.pending_count(),
         "tables": table_list,
         "rounds": out_rounds,
     }
@@ -358,24 +364,23 @@ async def storage_status():
 
 
 @router.delete("/rounds")
-async def delete_round(round_label: str, confirm: str, allow_undownloaded: bool = False):
-    """Permanently delete a round: its matches and, through the foreign keys'
-    on-delete-cascade, every snapshot, signal, score and alert for them.
+async def delete_round(round_label: str, allow_undownloaded: bool = False):
+    """Delete a round. Returns at once: the matches are hidden from every
+    list immediately and their data (snapshots, signals, scores, alerts) is
+    purged in the background - see app/round_delete.py.
 
-    round_label is a query parameter (labels contain slashes). confirm must
-    repeat the label exactly, so a stray request cannot delete anything.
-    Refuses while any match in the round is still monitored - stop tracking
-    it first so the poller is not writing to rows being deleted.
-
-    A round that has never been downloaded as CSV is refused (409,
-    "never_downloaded") unless allow_undownloaded=true is sent, so deleting
-    data that exists nowhere else always takes a deliberate second step.
+    round_label is a query parameter (labels contain slashes). Refuses while
+    any match in the round is still monitored - stop tracking it first so the
+    poller is not writing to rows being deleted. A round that has never been
+    downloaded as CSV is refused (409, "never_downloaded") unless
+    allow_undownloaded=true is sent, so deleting data that exists nowhere else
+    always takes a deliberate second step.
     """
-    if confirm != round_label:
-        raise HTTPException(status_code=400, detail="confirm must repeat the round label exactly")
     if round_label == "(unlabeled)":
         condition, params = "mjp_round_label is null", []
     else:
+        if round_label == round_delete.DELETING_LABEL:
+            raise HTTPException(status_code=404, detail="no such round")
         condition, params = "mjp_round_label = $1", [round_label]
     matches = await db.fetch(f"select id, is_monitored from matchups where {condition}", *params)
     if not matches:
@@ -395,14 +400,10 @@ async def delete_round(round_label: str, confirm: str, allow_undownloaded: bool 
             "deleting it loses the data for good; confirm explicitly to delete anyway",
         )
     ids = [m["id"] for m in matches]
-    snapshots = await db.fetchval(
-        "select count(*) from market_snapshots where matchup_id = any($1::bigint[])", ids
-    )
-    # One match at a time keeps each transaction small on a free-tier database.
-    for matchup_id in ids:
-        await db.execute("delete from matchups where id = $1", matchup_id)
+    await round_delete.hide_matches(ids)
     await db.execute("delete from round_downloads where round_label = $1", round_label)
-    return {"ok": True, "deleted_matches": len(ids), "deleted_snapshots": int(snapshots or 0)}
+    round_delete.start_purge()
+    return {"ok": True, "deleted_matches": len(ids), "purging_in_background": True}
 
 
 @router.post("/storage/reclaim")
@@ -419,6 +420,12 @@ async def reclaim_space():
     tables go first (their space frees up room for the larger ones). Tables
     that don't fit are reported, not attempted.
     """
+    pending = await round_delete.pending_count()
+    if pending:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{pending} deleted matches are still being removed in the background - try again in a moment",
+        )
     before = int(await db.fetchval(_SIZE_QUERY))
     limit = guard.limit_bytes
     sizes = await db.fetch(
@@ -495,7 +502,7 @@ async def export_match_snapshots_csv(round_label: str | None = None):
     the same convention /matches/summary already uses.
     """
     if round_label is None:
-        condition, params = "true", []
+        condition, params = "mjp_round_label is distinct from $1", [round_delete.DELETING_LABEL]
     elif round_label == "(unlabeled)":
         condition, params = "mjp_round_label is null", []
     else:
