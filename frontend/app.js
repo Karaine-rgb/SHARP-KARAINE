@@ -470,9 +470,10 @@ document.getElementById("btn-add-selected").onclick = async () => {
 function destroyCharts() {
   charts.forEach((c) => c.remove());
   charts = [];
+  destroyMarginCharts();
 }
 
-function makeChart(elId) {
+function makeChart(elId, store = charts) {
   const el = document.getElementById(elId);
   el.innerHTML = "";
   const chart = LightweightCharts.createChart(el, {
@@ -484,7 +485,7 @@ function makeChart(elId) {
     leftPriceScale: { visible: false, borderColor: "#263123" },
     timeScale: { borderColor: "#263123", timeVisible: true },
   });
-  charts.push(chart);
+  store.push(chart);
   return chart;
 }
 
@@ -620,35 +621,36 @@ const MARGIN_MARKETS = {
   moneyline_main: {
     hasLine: false,
     picks: [
-      { name: "Home", price: "home_price", fair: "fair_home_prob" },
-      { name: "Draw", price: "draw_price", fair: "fair_draw_prob" },
-      { name: "Away", price: "away_price", fair: "fair_away_prob" },
+      { price: "home_price", fair: "fair_home_prob", color: "#39ff88", label: (h) => `${h} (Home)` },
+      { price: "draw_price", fair: "fair_draw_prob", color: "#ffd60a", label: () => "Draw" },
+      { price: "away_price", fair: "fair_away_prob", color: "#ff9500", label: (h, a) => `${a} (Away)` },
     ],
   },
   spread_main: {
     hasLine: true,
-    lineLabel: "AH line (home)",
     picks: [
-      { name: "Home", price: "home_price", fair: "fair_home_prob" },
-      { name: "Away", price: "away_price", fair: "fair_away_prob" },
+      { price: "home_price", fair: "fair_home_prob", color: "#39ff88", label: (h) => `${h} (Home)` },
+      { price: "away_price", fair: "fair_away_prob", color: "#ff9500", label: (h, a) => `${a} (Away)` },
     ],
   },
   total_main: {
     hasLine: true,
-    lineLabel: "Total line",
     picks: [
-      { name: "Over", price: "home_price", fair: "fair_home_prob" },
-      { name: "Under", price: "away_price", fair: "fair_away_prob" },
+      { price: "home_price", fair: "fair_home_prob", color: "#39ff88", label: () => "Over" },
+      { price: "away_price", fair: "fair_away_prob", color: "#ff9500", label: () => "Under" },
     ],
   },
 };
 
 let marginDetail = null;
+let marginCharts = [];
 
-function computeMarginRows(series, market, everySnapshot) {
+// One row per usable snapshot: total margin (sum of 1/price - 1) and, per pick,
+// its margin (price-implied minus de-vigged fair probability, in pp) and its
+// share of the total.
+function computeMarginRows(series, market) {
   const cfg = MARGIN_MARKETS[market];
   const rows = [];
-  let lastSig = null;
   for (const s of series || []) {
     if (s.status === "suspended") continue;
     if (cfg.picks.some((p) => s[p.price] == null || s[p.fair] == null)) continue;
@@ -657,69 +659,65 @@ function computeMarginRows(series, market, everySnapshot) {
     if (prices.some((v) => !(v > 1)) || fairs.some((v) => !Number.isFinite(v))) continue;
     const imp = prices.map((v) => 1 / v);
     const total = imp.reduce((a, b) => a + b, 0) - 1;
-    const sig = `${s.home_points}|${prices.join(",")}`;
-    if (!everySnapshot && sig === lastSig) continue;
-    lastSig = sig;
-    rows.push({
-      at: s.captured_at,
-      line: cfg.hasLine ? s.home_points : null,
-      total: total * 100,
-      picks: imp.map((v, i) => {
-        const pp = (v - fairs[i]) * 100;
-        return { pp, share: total > 1e-9 ? ((v - fairs[i]) / total) * 100 : null };
-      }),
+    const row = { captured_at: s.captured_at, total: total * 100 };
+    imp.forEach((v, i) => {
+      row[`pp_${i}`] = (v - fairs[i]) * 100;
+      row[`share_${i}`] = total > 1e-9 ? ((v - fairs[i]) / total) * 100 : null;
     });
+    rows.push(row);
   }
   return rows;
 }
 
-function renderMarginTable() {
-  const head = document.getElementById("margin-table-head");
-  const body = document.getElementById("margin-table-body");
-  const summary = document.getElementById("margin-summary");
-  if (!marginDetail) return;
-  const market = document.getElementById("margin-market").value;
-  const everySnapshot = document.getElementById("margin-all-rows").checked;
-  const cfg = MARGIN_MARKETS[market];
-  const series = (marginDetail.series || {})[market];
-  const rows = computeMarginRows(series, market, everySnapshot);
-
-  head.innerHTML = `<tr><th>Captured (newest first)</th>${cfg.hasLine ? `<th>${cfg.lineLabel}</th>` : ""}<th>Total margin</th>${cfg.picks
-    .map((p) => `<th>${p.name} margin (share)</th>`)
-    .join("")}</tr>`;
-
-  if (rows.length === 0) {
-    body.innerHTML = `<tr><td colspan="${cfg.picks.length + (cfg.hasLine ? 3 : 2)}" class="dim">No usable snapshots for this market yet.</td></tr>`;
-    summary.textContent = "";
-    return;
-  }
-
-  const first = rows[0];
-  const last = rows[rows.length - 1];
-  const share = (r, i) => (r.picks[i].share == null ? "—" : `${r.picks[i].share.toFixed(1)}%`);
-  summary.textContent =
-    `${rows.length} ${everySnapshot ? "snapshots" : "price changes"} · total margin ${first.total.toFixed(2)}% at open → ${last.total.toFixed(2)}% latest · ` +
-    cfg.picks.map((p, i) => `${p.name} share ${share(first, i)} → ${share(last, i)}`).join(" · ");
-
-  body.innerHTML = rows
-    .slice()
-    .reverse()
-    .map(
-      (r) => `
-      <tr>
-        <td>${new Date(r.at).toLocaleString()}</td>
-        ${cfg.hasLine ? `<td>${fmtNum(r.line)}</td>` : ""}
-        <td>${r.total.toFixed(2)}%</td>
-        ${r.picks
-          .map((p) => `<td>${p.pp.toFixed(2)}pp<span class="margin-share">(${p.share == null ? "—" : p.share.toFixed(1) + "%"})</span></td>`)
-          .join("")}
-      </tr>`
-    )
-    .join("");
+function destroyMarginCharts() {
+  marginCharts.forEach((c) => c.remove());
+  marginCharts = [];
 }
 
-document.getElementById("margin-market").onchange = renderMarginTable;
-document.getElementById("margin-all-rows").onchange = renderMarginTable;
+function renderMarginCharts() {
+  if (!marginDetail || typeof LightweightCharts === "undefined") return;
+  destroyMarginCharts();
+  const market = document.getElementById("margin-market").value;
+  const cfg = MARGIN_MARKETS[market];
+  const rows = computeMarginRows((marginDetail.series || {})[market], market);
+  const summary = document.getElementById("margin-summary");
+  const home = marginDetail.matchup.home_team;
+  const away = marginDetail.matchup.away_team;
+  const cutoffs = marginDetail.betslip_cutoffs;
+  const ppFmt = (v) => `${Number(v).toFixed(2)}pp`;
+  const sharePctFmt = (v) => `${Number(v).toFixed(1)}%`;
+
+  if (rows.length === 0) {
+    summary.textContent = "No usable snapshots for this market yet.";
+  } else {
+    const first = rows[0];
+    const last = rows[rows.length - 1];
+    const sh = (r, i) => (r[`share_${i}`] == null ? "—" : `${r[`share_${i}`].toFixed(1)}%`);
+    summary.textContent =
+      `Total margin ${first.total.toFixed(2)}% at open → ${last.total.toFixed(2)}% latest · ` +
+      cfg.picks.map((p, i) => `${p.label(home, away)} share ${sh(first, i)} → ${sh(last, i)}`).join(" · ");
+  }
+
+  const c1 = makeChart("chart-margin-pp", marginCharts);
+  const sTotal = lineOn(c1, toSeriesData(rows, "total"), COLOR_LINE);
+  cfg.picks.forEach((p, i) => lineOn(c1, toSeriesData(rows, `pp_${i}`), p.color));
+  sTotal.setMarkers(cutoffMarkers(rows, "total", cutoffs, (v) => `${Number(v).toFixed(2)}%`));
+  setLegend("legend-margin-pp", [
+    { color: COLOR_LINE, label: "Total margin (%)" },
+    ...cfg.picks.map((p) => ({ color: p.color, label: `${p.label(home, away)} margin (pp)` })),
+  ]);
+
+  const c2 = makeChart("chart-margin-share", marginCharts);
+  let firstShare = null;
+  cfg.picks.forEach((p, i) => {
+    const s = lineOn(c2, toSeriesData(rows, `share_${i}`), p.color);
+    if (i === 0) firstShare = s;
+  });
+  if (firstShare) firstShare.setMarkers(cutoffMarkers(rows, "share_0", cutoffs, sharePctFmt));
+  setLegend("legend-margin-share", cfg.picks.map((p) => ({ color: p.color, label: p.label(home, away) })));
+}
+
+document.getElementById("margin-market").onchange = renderMarginCharts;
 
 const COLOR_HOME = "#39ff88";
 const COLOR_DRAW = "#ffd60a";
@@ -817,6 +815,9 @@ function renderCharts(detail) {
   const s8 = lineOn(c8, toSeriesData(detail.score_history, "total_score", "computed_at"), COLOR_HOME);
   s8.setMarkers(cutoffMarkers(detail.score_history, "total_score", cutoffs, numFmt, "computed_at"));
   setLegend("legend-score", [{ color: COLOR_HOME, label: "Composite score (0–10)" }]);
+
+  marginDetail = detail;
+  renderMarginCharts();
 }
 
 async function openDrilldown(matchupId) {
@@ -833,12 +834,6 @@ async function openDrilldown(matchupId) {
     renderRawTable(detail.raw_snapshots);
   } catch (err) {
     console.error("Failed to render match cards/table", err);
-  }
-  try {
-    marginDetail = detail;
-    renderMarginTable();
-  } catch (err) {
-    console.error("Failed to render margin table", err);
   }
   document.getElementById("drilldown").classList.remove("hidden");
   // charts need the container to be visible/sized before createChart
