@@ -788,11 +788,11 @@ function makeChart(elId, store = charts) {
   const chart = LightweightCharts.createChart(el, {
     width: el.clientWidth,
     height: el.clientHeight,
-    layout: { background: { color: "#10140f" }, textColor: "#c9f0c0", fontFamily: "monospace" },
-    grid: { vertLines: { color: "#263123" }, horzLines: { color: "#263123" } },
-    rightPriceScale: { borderColor: "#263123" },
-    leftPriceScale: { visible: false, borderColor: "#263123" },
-    timeScale: { borderColor: "#263123", timeVisible: true },
+    layout: { background: { color: "#070e1b" }, textColor: "#a9c4e8", fontFamily: "monospace" },
+    grid: { vertLines: { color: "#12223a" }, horzLines: { color: "#12223a" } },
+    rightPriceScale: { borderColor: "#1c3354" },
+    leftPriceScale: { visible: false, borderColor: "#1c3354" },
+    timeScale: { borderColor: "#1c3354", timeVisible: true },
   });
   store.push(chart);
   return chart;
@@ -1235,6 +1235,34 @@ function connectWs() {
     }
   };
 }
+
+// ---------------------------------------------------------------------------
+// Interactive polish: click ripple on buttons, cursor-follow light on buttons/cards
+// ---------------------------------------------------------------------------
+
+document.addEventListener("pointerdown", (e) => {
+  const btn = e.target.closest(".btn");
+  if (!btn || btn.disabled) return;
+  const rect = btn.getBoundingClientRect();
+  const ripple = document.createElement("span");
+  ripple.className = "ripple";
+  ripple.style.left = `${e.clientX - rect.left}px`;
+  ripple.style.top = `${e.clientY - rect.top}px`;
+  btn.appendChild(ripple);
+  ripple.addEventListener("animationend", () => ripple.remove());
+});
+
+let lightFrame = null;
+document.addEventListener("pointermove", (e) => {
+  const el = e.target.closest && e.target.closest(".btn, .card");
+  if (!el || lightFrame) return;
+  lightFrame = requestAnimationFrame(() => {
+    lightFrame = null;
+    const rect = el.getBoundingClientRect();
+    el.style.setProperty("--mx", `${e.clientX - rect.left}px`);
+    el.style.setProperty("--my", `${e.clientY - rect.top}px`);
+  });
+});
 
 async function init() {
   await loadRounds();

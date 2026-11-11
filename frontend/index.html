@@ -4,17 +4,44 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Sharp Karaine — Megajackpot Sharp Money Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/styles.css" />
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
   <header class="topbar">
-    <h1>SHARP KARAINE <span class="dim">// megajackpot sharp money tracker</span></h1>
+    <h1 class="brand">
+      <svg class="logo-mark" viewBox="0 0 48 48" aria-hidden="true">
+        <defs>
+          <linearGradient id="logo-grad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#2dffa0" />
+            <stop offset="1" stop-color="#38d6ff" />
+          </linearGradient>
+        </defs>
+        <circle class="logo-ring" cx="24" cy="24" r="21.5" fill="none" stroke="url(#logo-grad)" stroke-width="1.6" stroke-dasharray="3 3.5" />
+        <circle cx="24" cy="24" r="16" fill="#07111f" stroke="url(#logo-grad)" stroke-width="2" />
+        <polygon points="24,16.5 31,21.5 28.5,29.8 19.5,29.8 17,21.5" fill="url(#logo-grad)" opacity="0.9" />
+        <g stroke="url(#logo-grad)" stroke-width="1.4" stroke-linecap="round">
+          <line x1="24" y1="16.5" x2="24" y2="9.5" /><line x1="31" y1="21.5" x2="37.5" y2="19" />
+          <line x1="28.5" y1="29.8" x2="33" y2="36" /><line x1="19.5" y1="29.8" x2="15" y2="36" />
+          <line x1="17" y1="21.5" x2="10.5" y2="19" />
+        </g>
+        <g fill="#38d6ff">
+          <circle class="logo-node" cx="24" cy="8.5" r="1.9" /><circle class="logo-node" cx="38.5" cy="18.6" r="1.9" />
+          <circle class="logo-node" cx="33.8" cy="37" r="1.9" /><circle class="logo-node" cx="14.2" cy="37" r="1.9" />
+          <circle class="logo-node" cx="9.5" cy="18.6" r="1.9" />
+        </g>
+      </svg>
+      <span class="brand-name">SHARP KARAINE</span>
+      <span class="brand-tag">// megajackpot sharp money tracker</span>
+    </h1>
     <div class="topbar-actions">
       <span id="ws-status" class="pill pill-dim">connecting…</span>
-      <button id="btn-force-all" class="btn">Force Poll All</button>
-      <button id="btn-start-new-round" class="btn">Start New Round</button>
-      <button id="btn-discovery" class="btn">Discovery</button>
+      <button id="btn-force-all" class="btn btn-primary">Force Poll All</button>
+      <button id="btn-start-new-round" class="btn btn-accent">Start New Round</button>
+      <button id="btn-discovery" class="btn btn-accent">Discovery</button>
       <label class="download-group">
         <select id="download-round-select"><option value="">All rounds (one big file)</option></select>
         <a id="btn-download-data" href="/api/export/match-snapshots.csv" class="btn" download>Download</a>
@@ -66,7 +93,7 @@
       <label>Telegram chat id <input id="in-tg-chat" type="text" placeholder="unchanged" /></label>
       <div id="settings-current" class="dim small"></div>
       <div class="modal-actions">
-        <button class="btn" id="btn-settings-save">Save</button>
+        <button class="btn btn-primary" id="btn-settings-save">Save</button>
         <button class="btn btn-ghost" id="btn-settings-close">Close</button>
       </div>
     </div>
@@ -129,10 +156,10 @@
       <div id="saved-leagues-list" class="saved-leagues-list"></div>
 
       <label>MJP round label (used to group this round on the dashboard) <input id="in-round-label" type="text" placeholder="e.g. MJP September 2026 Week 1" /></label>
-      <button class="btn" id="btn-fetch-leagues">Fetch matches</button>
+      <button class="btn btn-primary" id="btn-fetch-leagues">Fetch matches</button>
       <div id="discovery-results"></div>
       <div class="modal-actions">
-        <button class="btn" id="btn-add-selected">Add selected to monitoring</button>
+        <button class="btn btn-primary" id="btn-add-selected">Add selected to monitoring</button>
         <button class="btn btn-ghost" id="btn-discovery-close">Close</button>
       </div>
     </div>
@@ -146,7 +173,7 @@
         <div id="dd-countdown" class="countdown dim"></div>
       </div>
       <div>
-        <button class="btn" id="dd-force-poll">Force Poll</button>
+        <button class="btn btn-primary" id="dd-force-poll">Force Poll</button>
         <button class="btn" id="dd-remove-from-round">Remove from round</button>
         <button class="btn" id="dd-unmonitor">Remove from monitoring</button>
         <button class="btn btn-ghost" id="dd-close">Close ✕</button>
