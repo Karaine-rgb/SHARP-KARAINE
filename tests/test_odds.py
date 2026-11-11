@@ -45,3 +45,35 @@ def test_power_devig_noop_when_already_fair():
 def test_power_devig_rejects_bad_input():
     with pytest.raises(ValueError):
         power_devig([1.2, -0.1])
+
+
+from app.odds import MARGIN_COLUMNS, fair_probs_from_decimal_odds, margin_columns
+
+
+def test_margin_columns_three_way_sums_and_shares():
+    prices = [2.63, 3.68, 2.62]
+    fair = fair_probs_from_decimal_odds(prices)
+    m = margin_columns(*prices, *fair)
+    total = (sum(1 / p for p in prices) - 1) * 100
+    assert m["margin_total_pct"] == pytest.approx(total, abs=1e-5)
+    pps = [m["margin_home_pp"], m["margin_draw_pp"], m["margin_away_pp"]]
+    assert sum(pps) == pytest.approx(total, abs=1e-4)
+    shares = [m["margin_home_share_pct"], m["margin_draw_share_pct"], m["margin_away_share_pct"]]
+    assert sum(shares) == pytest.approx(100.0, abs=1e-4)
+    assert set(m) == set(MARGIN_COLUMNS)
+
+
+def test_margin_columns_two_way_leaves_draw_empty():
+    prices = [1.95, 1.90]
+    fair = fair_probs_from_decimal_odds(prices)
+    m = margin_columns(prices[0], None, prices[1], fair[0], None, fair[1])
+    assert m["margin_draw_pp"] is None and m["margin_draw_share_pct"] is None
+    assert m["margin_home_pp"] + m["margin_away_pp"] == pytest.approx(m["margin_total_pct"], abs=1e-4)
+    assert m["margin_home_share_pct"] + m["margin_away_share_pct"] == pytest.approx(100.0, abs=1e-4)
+
+
+def test_margin_columns_missing_data_gives_all_none():
+    m = margin_columns(2.0, None, None, 0.5, None, None)
+    assert all(v is None for v in m.values())
+    m = margin_columns(None, None, None, None, None, None)
+    assert all(v is None for v in m.values())

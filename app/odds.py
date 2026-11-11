@@ -78,3 +78,46 @@ def power_devig(implied_probs: list[float], tol: float = 1e-10, max_iter: int = 
 def fair_probs_from_decimal_odds(decimal_odds: list[float]) -> list[float]:
     raw = [implied_prob(o) for o in decimal_odds]
     return power_devig(raw)
+
+
+MARGIN_COLUMNS = [
+    "margin_total_pct",
+    "margin_home_pp",
+    "margin_draw_pp",
+    "margin_away_pp",
+    "margin_home_share_pct",
+    "margin_draw_share_pct",
+    "margin_away_share_pct",
+]
+
+
+def margin_columns(home_price, draw_price, away_price, fair_home, fair_draw, fair_away) -> dict:
+    """Pinnacle's margin for one snapshot, in the export's home/draw/away slots
+    (Over = home slot, Under = away slot for total markets, as stored).
+
+    margin_total_pct: (sum of 1/price - 1) * 100.
+    margin_<pick>_pp: that pick's price-implied probability minus its stored
+    de-vigged fair probability, in percentage points; the picks sum to the total.
+    margin_<pick>_share_pct: that pick's slice of the total margin.
+    Two-way markets (no draw price) leave the draw columns empty. The split is
+    fixed by the prices through the power de-vig used for the fair probabilities.
+    """
+    out = {c: None for c in MARGIN_COLUMNS}
+    three_way = draw_price is not None
+    prices = [home_price, draw_price, away_price] if three_way else [home_price, away_price]
+    fairs = [fair_home, fair_draw, fair_away] if three_way else [fair_home, fair_away]
+    if any(p is None for p in prices) or any(f is None for f in fairs):
+        return out
+    prices = [float(p) for p in prices]
+    fairs = [float(f) for f in fairs]
+    if any(p <= 1.0 for p in prices):
+        return out
+    imp = [1.0 / p for p in prices]
+    total = sum(imp) - 1.0
+    names = ["home", "draw", "away"] if three_way else ["home", "away"]
+    out["margin_total_pct"] = round(total * 100.0, 6)
+    for name, i, f in zip(names, imp, fairs):
+        out[f"margin_{name}_pp"] = round((i - f) * 100.0, 6)
+        if total > 1e-9:
+            out[f"margin_{name}_share_pct"] = round((i - f) / total * 100.0, 6)
+    return out

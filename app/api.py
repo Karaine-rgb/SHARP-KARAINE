@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Response, WebSocket, WebSocketDisc
 from pydantic import BaseModel
 
 from app import db
+from app.odds import MARGIN_COLUMNS, margin_columns
 from app.pinnacle_client import ArcadiaClient, ArcadiaError
 from app.poller import poller
 from app.settings_store import get_all_settings_masked, get_arcadia_api_key, set_setting
@@ -284,9 +285,20 @@ async def export_match_snapshots_csv(round_label: str | None = None):
     rows = await db.fetch(f"select * from match_snapshots_export where {condition}", *params)
     buffer = io.StringIO()
     if rows:
-        writer = csv.DictWriter(buffer, fieldnames=list(rows[0].keys()))
+        # Margin columns are derived per row from the stored prices and fair
+        # probabilities (not stored in the DB), so the export carries them
+        # without a schema change.
+        writer = csv.DictWriter(buffer, fieldnames=list(rows[0].keys()) + MARGIN_COLUMNS)
         writer.writeheader()
-        writer.writerows(dict(r) for r in rows)
+        for r in rows:
+            d = dict(r)
+            d.update(
+                margin_columns(
+                    d["home_price"], d["draw_price"], d["away_price"],
+                    d["fair_home_prob"], d["fair_draw_prob"], d["fair_away_prob"],
+                )
+            )
+            writer.writerow(d)
 
     safe_suffix = re.sub(r"[^A-Za-z0-9_-]+", "_", round_label).strip("_") if round_label else "all"
     filename = f"match_snapshots_{safe_suffix}.csv"
