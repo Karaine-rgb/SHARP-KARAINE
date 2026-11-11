@@ -111,6 +111,35 @@
 
     <section id="dd-cards" class="cards"></section>
 
+    <section class="margin-section">
+      <h3>Margin distribution over time</h3>
+      <p class="dim small">
+        Pinnacle's margin (overround) and how it is spread across each pick, at every price change.
+        "Margin" per pick is its price-implied probability minus its de-vigged fair probability, in
+        percentage points; the bracket is that pick's share of the market's total margin. Descriptive
+        only: the split is computed from the prices with the same power de-vig as the fair
+        probabilities, so it is fixed by the prices rather than a separate signal, and a backtest on
+        128 matches found no predictive value in it.
+      </p>
+      <div class="margin-controls">
+        <label>Market
+          <select id="margin-market">
+            <option value="moneyline_main">1X2</option>
+            <option value="spread_main">Asian handicap</option>
+            <option value="total_main">Total goals</option>
+          </select>
+        </label>
+        <label><input type="checkbox" id="margin-all-rows"> Show every snapshot (not just price changes)</label>
+      </div>
+      <div id="margin-summary" class="small"></div>
+      <div class="raw-table-wrap">
+        <table id="margin-table">
+          <thead id="margin-table-head"></thead>
+          <tbody id="margin-table-body"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="raw-data">
       <h3>Raw data study (independent of the signal engine)</h3>
       <p class="dim small">

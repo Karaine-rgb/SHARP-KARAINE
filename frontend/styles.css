@@ -232,3 +232,10 @@ tbody tr:hover { background: var(--bg-elevated); }
 
 .raw-table-wrap { max-height: 400px; overflow: auto; border: 1px solid var(--border); margin-top: 8px; }
 #raw-table { font-size: 11px; }
+
+.margin-section h3 { color: var(--accent); font-size: 13px; border-top: 1px solid var(--border); padding-top: 16px; }
+.margin-controls { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin: 8px 0; font-size: 12px; }
+#margin-summary { margin: 6px 0; color: var(--text-dim); }
+#margin-table { font-size: 11px; }
+#margin-table tbody tr { cursor: default; }
+.margin-share { color: var(--text-dim); font-size: 10px; margin-left: 4px; }
