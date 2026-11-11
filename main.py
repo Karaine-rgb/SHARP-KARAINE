@@ -21,6 +21,7 @@ FRONTEND_DIR = Path(__file__).parent / "frontend"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.init_pool()
+    await db.ensure_schema()
     await poller.start()
     yield
     await poller.stop()

@@ -76,13 +76,14 @@
       <div id="storage-summary" class="small"></div>
       <p class="dim small">
         Deleting a round permanently removes its matches and every price snapshot, signal and score
-        for them. Download the round's CSV first if you want to keep the data. The size per round is
+        for them. A round that has never been downloaded asks for an extra confirmation before it can
+        be deleted. "Downloaded" means the CSV was served by the app, not that your browser saved it. The size per round is
         an estimate. Space freed by a delete is reused by new data right away, but the database size
         meter only drops after "Reclaim disk space".
       </p>
       <div class="storage-table-wrap">
         <table id="storage-table">
-          <thead><tr><th>Round</th><th>Matches</th><th>Snapshots</th><th>~Size</th><th></th></tr></thead>
+          <thead><tr><th>Round</th><th>Matches</th><th>Snapshots</th><th>~Size</th><th>Downloaded</th><th></th></tr></thead>
           <tbody id="storage-table-body"></tbody>
         </table>
       </div>

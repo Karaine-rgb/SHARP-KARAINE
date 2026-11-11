@@ -357,6 +357,12 @@ async function loadStorage() {
   document.getElementById("storage-table-body").innerHTML = data.rounds
     .map((r, i) => {
       const csv = `/api/export/match-snapshots.csv?round_label=${encodeURIComponent(r.round_label)}`;
+      let dl = `<span class="never-downloaded">never</span>`;
+      if (r.downloaded_at) {
+        const when = new Date(r.downloaded_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+        const grown = r.downloaded_snapshots != null ? r.snapshot_count - r.downloaded_snapshots : 0;
+        dl = `${when}${grown > 0 ? ` <span class="never-downloaded" title="Snapshots collected after that download">(+${grown.toLocaleString()} since)</span>` : ""}`;
+      }
       const del = r.is_active
         ? `<span class="dim" title="Stop tracking this round first (Start New Round)">live - cannot delete</span>`
         : `<button class="btn btn-danger" data-delete-round="${i}">Delete</button>`;
@@ -365,7 +371,8 @@ async function loadStorage() {
         <td>${r.match_count}</td>
         <td>${r.snapshot_count.toLocaleString()}</td>
         <td>${fmtBytes(r.est_bytes)}</td>
-        <td><a class="btn btn-ghost" href="${csv}" download>CSV</a> ${del}</td>
+        <td>${dl}</td>
+        <td><a class="btn btn-ghost" data-csv href="${csv}" download>CSV</a> ${del}</td>
       </tr>`;
     })
     .join("");
@@ -380,6 +387,11 @@ document.getElementById("btn-storage-close").onclick = () =>
   document.getElementById("modal-storage").classList.add("hidden");
 
 document.getElementById("storage-table-body").onclick = async (ev) => {
+  if (ev.target.closest("[data-csv]")) {
+    // the server records the download when it serves the file; refresh the "Downloaded" column afterwards
+    setTimeout(() => loadStorage().catch(() => {}), 2500);
+    return;
+  }
   const btn = ev.target.closest("[data-delete-round]");
   if (!btn) return;
   const r = storageRounds[Number(btn.dataset.deleteRound)];
@@ -392,11 +404,22 @@ document.getElementById("storage-table-body").onclick = async (ev) => {
     msg.textContent = "Label did not match - nothing was deleted.";
     return;
   }
+  const neverDownloaded = !r.downloaded_at;
+  if (neverDownloaded) {
+    const ok = window.confirm(
+      `"${r.round_label}" has NEVER been downloaded.\n\nIf you delete it, this data is gone for good - there is no copy anywhere else.\n\nIs it really okay to delete it without a download?`
+    );
+    if (!ok) {
+      msg.textContent = "Not deleted - download the CSV first if you want to keep this round.";
+      return;
+    }
+  }
   btn.disabled = true;
   msg.textContent = "Deleting...";
   try {
     const out = await api(
-      `/rounds?round_label=${encodeURIComponent(r.round_label)}&confirm=${encodeURIComponent(typed)}`,
+      `/rounds?round_label=${encodeURIComponent(r.round_label)}&confirm=${encodeURIComponent(typed)}` +
+        (neverDownloaded ? "&allow_undownloaded=true" : ""),
       { method: "DELETE" }
     );
     await loadStorage();

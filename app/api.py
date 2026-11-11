@@ -226,6 +226,15 @@ async def rename_round(body: RoundRename):
             new_label,
             body.old_label,
         )
+    # Keep the "already downloaded" record with the round: move it to the new
+    # label, or drop it if that label already has its own record (a merge).
+    await db.execute(
+        "update round_downloads set round_label = $1 where round_label = $2 "
+        "and not exists (select 1 from round_downloads where round_label = $1)",
+        new_label,
+        body.old_label,
+    )
+    await db.execute("delete from round_downloads where round_label = $1", body.old_label)
     return {"ok": True}
 
 
@@ -290,9 +299,12 @@ async def storage_overview():
             count(distinct m.id) as match_count,
             count(s.id) as snapshot_count,
             coalesce(bool_or(m.is_monitored), false) as is_active,
-            min(m.start_time) as earliest_kickoff
+            min(m.start_time) as earliest_kickoff,
+            max(d.downloaded_at) as downloaded_at,
+            max(d.snapshot_count) as downloaded_snapshots
         from matchups m
         left join market_snapshots s on s.matchup_id = m.id
+        left join round_downloads d on d.round_label = coalesce(m.mjp_round_label, '(unlabeled)')
         group by 1
         order by min(m.start_time) desc
         """
@@ -306,12 +318,13 @@ async def storage_overview():
         d["snapshot_count"] = int(d["snapshot_count"])
         d["match_count"] = int(d["match_count"])
         d["est_bytes"] = int(data_bytes * d["snapshot_count"] / total_snaps)
+        d["downloaded_snapshots"] = int(d["downloaded_snapshots"]) if d.get("downloaded_snapshots") is not None else None
         out_rounds.append(d)
     return {"db_bytes": int(db_bytes), "tables": table_list, "rounds": out_rounds}
 
 
 @router.delete("/rounds")
-async def delete_round(round_label: str, confirm: str):
+async def delete_round(round_label: str, confirm: str, allow_undownloaded: bool = False):
     """Permanently delete a round: its matches and, through the foreign keys'
     on-delete-cascade, every snapshot, signal, score and alert for them.
 
@@ -319,6 +332,10 @@ async def delete_round(round_label: str, confirm: str):
     repeat the label exactly, so a stray request cannot delete anything.
     Refuses while any match in the round is still monitored - stop tracking
     it first so the poller is not writing to rows being deleted.
+
+    A round that has never been downloaded as CSV is refused (409,
+    "never_downloaded") unless allow_undownloaded=true is sent, so deleting
+    data that exists nowhere else always takes a deliberate second step.
     """
     if confirm != round_label:
         raise HTTPException(status_code=400, detail="confirm must repeat the round label exactly")
@@ -334,6 +351,15 @@ async def delete_round(round_label: str, confirm: str):
             status_code=409,
             detail="this round still has monitored matches - stop tracking it before deleting",
         )
+    downloaded = await db.fetchrow(
+        "select downloaded_at from round_downloads where round_label = $1", round_label
+    )
+    if downloaded is None and not allow_undownloaded:
+        raise HTTPException(
+            status_code=409,
+            detail="never_downloaded: this round has never been downloaded as CSV - "
+            "deleting it loses the data for good; confirm explicitly to delete anyway",
+        )
     ids = [m["id"] for m in matches]
     snapshots = await db.fetchval(
         "select count(*) from market_snapshots where matchup_id = any($1::bigint[])", ids
@@ -341,6 +367,7 @@ async def delete_round(round_label: str, confirm: str):
     # One match at a time keeps each transaction small on a free-tier database.
     for matchup_id in ids:
         await db.execute("delete from matchups where id = $1", matchup_id)
+    await db.execute("delete from round_downloads where round_label = $1", round_label)
     return {"ok": True, "deleted_matches": len(ids), "deleted_snapshots": int(snapshots or 0)}
 
 
@@ -359,6 +386,29 @@ async def reclaim_space():
         raise HTTPException(status_code=500, detail=f"reclaim failed: {exc}")
     after = int(await db.fetchval(_SIZE_QUERY))
     return {"ok": True, "before_bytes": before, "after_bytes": after}
+
+
+async def _record_downloads(rows) -> None:
+    """Remember that these rounds were exported, with how many snapshots the
+    file held. Recorded when the file is served, which is the closest the
+    server can get to "downloaded" - it cannot see whether the browser saved it.
+    """
+    counts: dict[str, int] = {}
+    for r in rows:
+        label = r["mjp_round_label"] or "(unlabeled)"
+        counts[label] = counts.get(label, 0) + 1
+    if counts:
+        await db.executemany(
+            """
+            insert into round_downloads (round_label, downloaded_at, snapshot_count, download_count)
+            values ($1, now(), $2, 1)
+            on conflict (round_label) do update set
+                downloaded_at = now(),
+                snapshot_count = excluded.snapshot_count,
+                download_count = round_downloads.download_count + 1
+            """,
+            list(counts.items()),
+        )
 
 
 @router.get("/export/match-snapshots.csv")
@@ -407,6 +457,7 @@ async def export_match_snapshots_csv(round_label: str | None = None):
 
     safe_suffix = re.sub(r"[^A-Za-z0-9_-]+", "_", round_label).strip("_") if round_label else "all"
     filename = f"match_snapshots_{safe_suffix}.csv"
+    await _record_downloads(rows)
     return Response(
         content=buffer.getvalue(),
         media_type="text/csv",

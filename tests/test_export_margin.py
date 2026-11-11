@@ -12,7 +12,7 @@ async def test_export_csv_includes_margin_columns(monkeypatch):
     prices = [2.63, 3.68, 2.62]
     fair = fair_probs_from_decimal_odds(prices)
     base = {
-        "matchup_id": 1, "market_type": "moneyline", "home_price": prices[0], "draw_price": prices[1],
+        "matchup_id": 1, "mjp_round_label": "R", "market_type": "moneyline", "home_price": prices[0], "draw_price": prices[1],
         "away_price": prices[2], "fair_home_prob": fair[0], "fair_draw_prob": fair[1], "fair_away_prob": fair[2],
     }
     two_way = {**base, "market_type": "spread", "draw_price": None, "fair_draw_prob": None,
@@ -21,7 +21,11 @@ async def test_export_csv_includes_margin_columns(monkeypatch):
     async def fake_fetch(query, *params):
         return [base, two_way]
 
+    async def fake_executemany(query, args):
+        return None
+
     monkeypatch.setattr(api.db, "fetch", fake_fetch)
+    monkeypatch.setattr(api.db, "executemany", fake_executemany)
     resp = await api.export_match_snapshots_csv()
     rows = list(csv.DictReader(io.StringIO(resp.body.decode())))
     assert set(MARGIN_COLUMNS) <= set(rows[0].keys())

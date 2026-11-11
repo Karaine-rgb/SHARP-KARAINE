@@ -108,6 +108,14 @@ insert into saved_leagues (league_id, league_name) values
     (1980, 'England - Premier League')
 on conflict (league_id) do nothing;
 
+-- Rounds that have been downloaded as CSV; the app also creates this on startup.
+create table if not exists round_downloads (
+    round_label    text primary key,
+    downloaded_at  timestamptz not null default now(),
+    snapshot_count bigint not null default 0,
+    download_count integer not null default 1
+);
+
 -- One flat, download-ready table for backtesting: every raw market
 -- snapshot ever collected, with the match it belongs to and the real
 -- final score already attached to each row - no joining three separate

@@ -85,3 +85,20 @@ def from_jsonb(value: Any) -> Any:
     if value is None or not isinstance(value, str):
         return value
     return json.loads(value)
+
+
+# Which rounds have been downloaded as CSV (and how many snapshots that file
+# held), so deleting a round that was never downloaded needs an explicit
+# extra confirmation. Created on startup so no manual migration is needed.
+ROUND_DOWNLOADS_DDL = """
+create table if not exists round_downloads (
+    round_label    text primary key,
+    downloaded_at  timestamptz not null default now(),
+    snapshot_count bigint not null default 0,
+    download_count integer not null default 1
+)
+"""
+
+
+async def ensure_schema() -> None:
+    await execute(ROUND_DOWNLOADS_DDL)

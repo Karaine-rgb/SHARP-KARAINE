@@ -245,3 +245,4 @@ tbody tr:hover { background: var(--bg-elevated); }
 #modal-storage .modal-card { width: 780px; max-width: 95vw; }
 #storage-table td:first-child { white-space: normal; word-break: break-word; max-width: 300px; }
 #storage-table td:last-child { text-align: right; }
+.never-downloaded { color: #ff9f0a; }
