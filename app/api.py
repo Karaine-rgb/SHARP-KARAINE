@@ -556,10 +556,9 @@ async def matches_summary(round_label: str | None = None):
             m.id, m.pinnacle_matchup_id, m.home_team, m.away_team, m.league_name,
             m.start_time, m.mjp_round_label, m.is_monitored, m.home_score, m.away_score,
             s.tier, s.sharp_side, s.contested, s.total_score, s.ah_score, s.x2_score,
-            s.limit_bonus, s.convergence_bonus, s.computed_at as score_computed_at,
+            s.computed_at as score_computed_at,
             ah.detail_json as ah_detail,
-            x2.detail_json as x2_detail,
-            lim.detail_json as limit_detail
+            x2.detail_json as x2_detail
         from matchups m
         left join lateral (
             select * from match_scores ms where ms.matchup_id = m.id
@@ -573,10 +572,6 @@ async def matches_summary(round_label: str | None = None):
             select detail_json from signals sg where sg.matchup_id = m.id
             and sg.signal_type = 'x2_displacement' order by computed_at desc limit 1
         ) x2 on true
-        left join lateral (
-            select detail_json from signals sg where sg.matchup_id = m.id
-            and sg.signal_type = 'limit_movement' order by computed_at desc limit 1
-        ) lim on true
         where {condition}
         order by m.start_time asc
         """,
@@ -587,7 +582,6 @@ async def matches_summary(round_label: str | None = None):
         d = dict(r)
         d["ah_detail"] = db.from_jsonb(d["ah_detail"])
         d["x2_detail"] = db.from_jsonb(d["x2_detail"])
-        d["limit_detail"] = db.from_jsonb(d["limit_detail"])
         result.append(d)
     return result
 
@@ -644,7 +638,7 @@ async def match_detail(matchup_id: int):
     latest_signals = await db.fetch(
         """
         select distinct on (signal_type) signal_type, direction, magnitude, detail_json, computed_at
-        from signals where matchup_id = $1
+        from signals where matchup_id = $1 and signal_type <> 'limit_movement'
         order by signal_type, computed_at desc
         """,
         matchup_id,

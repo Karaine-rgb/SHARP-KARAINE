@@ -2,7 +2,7 @@
 
 Tracks Pinnacle's Arcadia guest API (1X2 + Asian Handicap odds and limits)
 for the matches that make up a SportPesa Megajackpot round, classifies
-price/limit movement into sharp-money signals, scores each match, and
+price movement into sharp-money signals, scores each match, and
 serves a live dashboard + Telegram alerts.
 
 ## Before you trust any of this
@@ -21,8 +21,9 @@ serves a live dashboard + Telegram alerts.
   name or shape mismatch in `app/ingest.py`'s normalization.
 - **The exact scoring numbers are this build's own calibration, not
   empirical.** The *qualitative* thresholds (0.25/0.5/1.0 AH points,
-  0.30/0.80/1.80pp 1X2 displacement, 30%/50% limit drop) are from your
-  spec. How each threshold maps to a 0-10 score is a reasonable bridge
+  0.30/0.80/1.80pp 1X2 displacement) are from your
+  spec. (Limit movement was part of the original spec and has been removed
+  from the tool: it showed no predictive value.) How each threshold maps to a 0-10 score is a reasonable bridge
   this implementation invented to satisfy the tier cutoffs you gave
   (Strong Sharp 7-10, Sharp 4.5-6.9, Watch 2-4.4, No Signal 0-1.9) — it is
   not backed by real outcome data, because none exists yet. Every one of

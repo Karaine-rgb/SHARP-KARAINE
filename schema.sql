@@ -59,7 +59,7 @@ create table if not exists signals (
     id            bigserial primary key,
     matchup_id    bigint not null references matchups(id) on delete cascade,
     computed_at   timestamptz not null default now(),
-    signal_type   text not null,   -- limit_movement | ah_line_shift | x2_displacement | ah_price_move | convergence
+    signal_type   text not null,   -- ah_line_shift | x2_displacement | velocity_shape | favorite_strength (limit_movement was removed)
     direction     text,            -- home | away | draw | null
     magnitude     double precision,
     detail_json   jsonb
@@ -72,7 +72,7 @@ create table if not exists match_scores (
     computed_at   timestamptz not null default now(),
     ah_score      double precision not null,
     x2_score      double precision not null,
-    limit_bonus   double precision not null,
+    limit_bonus   double precision not null,   -- unused (limit movement removed); always written as 0
     convergence_bonus double precision not null default 0,
     total_score   double precision not null,
     tier          text not null,   -- strong_sharp | sharp | watch | no_signal | insufficient_data

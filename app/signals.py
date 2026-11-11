@@ -1,17 +1,16 @@
 """Sharp-money signal detection and scoring.
 
-Implements the five signals and scoring model exactly as specified by the
-user from their prior build:
+Implements the signals and scoring model specified by the user from their
+prior build (limit movement was part of it originally and has since been
+removed from the tool entirely - it never showed any predictive value):
 
-  1. Limit movement       - % drop in maxRiskStake vs the opening snapshot
-  2. AH line shift        - points delta on the main Asian Handicap line
-  3. 1X2 fair-prob move   - cumulative pp change in de-vigged 1X2 probs
+  1. AH line shift        - points delta on the main Asian Handicap line
+  2. 1X2 fair-prob move   - cumulative pp change in de-vigged 1X2 probs
                             from the true opening line
-  4. AH fair-prob move    - same idea on the AH market (confirmation)
-  5. Cross-market convergence - all of the above agreeing on one side
+  3. AH fair-prob move    - same idea on the AH market (confirmation)
 
 IMPORTANT - calibration disclaimer: the *qualitative* thresholds below
-(0.25/0.5/1.0 points, 0.30/0.80/1.80pp, 30%/50% limit drop) come directly
+(0.25/0.5/1.0 points, 0.30/0.80/1.80pp) come directly
 from the user's spec. The *numeric score values* each threshold maps to
 (e.g. "a 1.0pt AH shift = 5.0 score") are this implementation's own
 calibration bridging those qualitative thresholds into the 0-10 scoring
@@ -37,11 +36,6 @@ CONFIG = {
     "x2_score_strong": 5.0,
     "x2_score_meaningful": 3.0,
     "x2_score_noise_floor": 1.5,
-    "limit_drop_severe_pct": 50.0,
-    "limit_drop_significant_pct": 30.0,
-    "limit_bonus_severe": 3.0,
-    "limit_bonus_significant": 1.5,
-    "convergence_bonus": 1.0,
     "tier_strong_sharp": 7.0,
     "tier_sharp": 4.5,
     "tier_watch": 2.0,
@@ -472,29 +466,6 @@ def velocity_shape(moneyline_series: list[dict]) -> dict:
     return result
 
 
-def limit_drop_pct(series: list[dict]) -> float:
-    """Only ever measures a drop - a rise is clamped to 0.0, deliberately.
-
-    A "limit rises when Pinnacle is confident in the price" signal was
-    investigated and rejected after checking it against 2 real MJP rounds
-    (33 matches): every single match showed a net limit *rise*, never a
-    drop, and the rise percentages repeated identically across unrelated
-    matches in the same league (e.g. two different Czech First Liga
-    matches both went +400% ML, two different Serie A matches both went
-    +344.4%). That pattern is consistent with Pinnacle mechanically
-    ramping a new market from a small placeholder limit up to its
-    standard size on a fixed per-league schedule, independent of any
-    money actually landing on that specific match - not with the book
-    reacting to real order flow. Reviving a rise-based signal would need
-    a real per-league baseline ramp curve to detect deviations *from*,
-    not just "did it rise," which the 2-round sample can't support yet.
-    """
-    opening, current = _first_last(series, "limit_amount")
-    if not opening or opening <= 0 or current is None:
-        return 0.0
-    return max(0.0, (opening - current) / opening * 100.0)
-
-
 def detect_contested(
     moneyline_series: list[dict], kickoff: datetime, split_hours: float = CONFIG["early_late_split_hours"]
 ) -> bool:
@@ -534,15 +505,6 @@ def _score_x2(magnitude_pp: float) -> float:
         return c["x2_score_meaningful"]
     if magnitude_pp >= c["x2_noise_floor_pp"]:
         return c["x2_score_noise_floor"]
-    return 0.0
-
-
-def _score_limit(drop_pct: float) -> float:
-    c = CONFIG
-    if drop_pct >= c["limit_drop_severe_pct"]:
-        return c["limit_bonus_severe"]
-    if drop_pct >= c["limit_drop_significant_pct"]:
-        return c["limit_bonus_significant"]
     return 0.0
 
 
@@ -589,20 +551,13 @@ def compute_match_score(
             "x2": x2_displacement(moneyline_series),
             "favorite_strength": favorite_strength(spread_series, moneyline_series),
             "velocity": velocity_shape(moneyline_series),
-            "moneyline_limit_drop_pct": limit_drop_pct(moneyline_series),
-            "spread_limit_drop_pct": limit_drop_pct(spread_series),
             "ah_score": 0.0,
             "x2_score": 0.0,
-            "limit_bonus": 0.0,
-            "convergence_bonus": 0.0,
             "total_score": 0.0,
         }
 
     ah = ah_line_shift(spread_series)
     x2 = x2_displacement(moneyline_series)
-    ml_limit_drop = limit_drop_pct(moneyline_series)
-    sp_limit_drop = limit_drop_pct(spread_series)
-    max_limit_drop = max(ml_limit_drop, sp_limit_drop)
 
     # Backtested against 2 real MJP rounds: every nonzero AH shift observed
     # was exactly the same 0.25 points, yet the matching probability move on
@@ -630,19 +585,7 @@ def compute_match_score(
         ah_effective_direction = ah_prob["direction"]
 
     x2_score = _score_x2(x2["magnitude"])
-    limit_bonus = _score_limit(max_limit_drop)
-
-    conv_bonus = 0.0
-    if (
-        ah["magnitude"] >= CONFIG["ah_shift_threshold"]
-        and x2["magnitude"] >= CONFIG["x2_meaningful_pp"]
-        and max_limit_drop >= CONFIG["limit_drop_significant_pct"]
-        and ah["direction"] is not None
-        and ah["direction"] == x2["direction"]
-    ):
-        conv_bonus = CONFIG["convergence_bonus"]
-
-    total = 1.4 * ah_score + 1.0 * x2_score + limit_bonus + conv_bonus
+    total = 1.4 * ah_score + 1.0 * x2_score
     contested = detect_contested(moneyline_series, kickoff)
 
     # Sharp side priority: AH shift first (sharps move AH first per the
@@ -668,12 +611,8 @@ def compute_match_score(
         "x2": x2,
         "favorite_strength": favorite_strength(spread_series, moneyline_series),
         "velocity": velocity_shape(moneyline_series),
-        "moneyline_limit_drop_pct": ml_limit_drop,
-        "spread_limit_drop_pct": sp_limit_drop,
         "ah_score": ah_score,
         "x2_score": x2_score,
-        "limit_bonus": limit_bonus,
-        "convergence_bonus": conv_bonus,
         "total_score": total,
     }
 
@@ -712,13 +651,11 @@ async def compute_and_store_score(matchup_id: int, kickoff: datetime) -> dict:
         insert into match_scores (
             matchup_id, ah_score, x2_score, limit_bonus, convergence_bonus,
             total_score, tier, sharp_side, contested
-        ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        ) values ($1,$2,$3,0.0,0.0,$4,$5,$6,$7)
         """,
         matchup_id,
         result["ah_score"],
         result["x2_score"],
-        result["limit_bonus"],
-        result["convergence_bonus"],
         result["total_score"],
         result["tier"],
         result["sharp_side"],
@@ -729,9 +666,8 @@ async def compute_and_store_score(matchup_id: int, kickoff: datetime) -> dict:
         insert into signals (matchup_id, signal_type, direction, magnitude, detail_json)
         values ($1,'ah_line_shift',$2,$3,$4::jsonb),
                ($1,'x2_displacement',$5,$6,$7::jsonb),
-               ($1,'limit_movement',$8,$9,$10::jsonb),
-               ($1,'velocity_shape',$11,$12,$13::jsonb),
-               ($1,'favorite_strength',$14,$15,$16::jsonb)
+               ($1,'velocity_shape',$8,$9,$10::jsonb),
+               ($1,'favorite_strength',$11,$12,$13::jsonb)
         """,
         matchup_id,
         result["ah"]["direction"],
@@ -740,14 +676,6 @@ async def compute_and_store_score(matchup_id: int, kickoff: datetime) -> dict:
         result["x2"]["direction"],
         result["x2"]["magnitude"],
         db.to_jsonb(result["x2"]),
-        result["sharp_side"],
-        max(result["moneyline_limit_drop_pct"], result["spread_limit_drop_pct"]),
-        db.to_jsonb(
-            {
-                "moneyline_limit_drop_pct": result["moneyline_limit_drop_pct"],
-                "spread_limit_drop_pct": result["spread_limit_drop_pct"],
-            }
-        ),
         # "direction" column repurposed as the shape label (steam/drift/
         # building/reversal/quiet/None) - this signal has no home/away
         # side of its own, it's watch-only, see velocity_shape() docstring.

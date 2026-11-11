@@ -10,7 +10,6 @@ from app.signals import (
     data_sufficiency,
     detect_contested,
     favorite_strength,
-    limit_drop_pct,
     velocity_shape,
     x2_displacement,
 )
@@ -342,20 +341,6 @@ def test_velocity_shape_no_label_with_fewer_than_two_snapshots():
 
 
 # ---------------------------------------------------------------------------
-# limit_drop_pct
-# ---------------------------------------------------------------------------
-
-def test_limit_drop_pct_severe():
-    series = [sp_point(48, -0.5, limit=5000.0), sp_point(1, -1.0, limit=2000.0)]
-    assert limit_drop_pct(series) == 60.0
-
-
-def test_limit_drop_pct_no_drop_floors_at_zero():
-    series = [sp_point(48, -0.5, limit=2000.0), sp_point(1, -0.5, limit=5000.0)]
-    assert limit_drop_pct(series) == 0.0
-
-
-# ---------------------------------------------------------------------------
 # contested detection
 # ---------------------------------------------------------------------------
 
@@ -422,10 +407,10 @@ def test_compute_match_score_insufficient_data():
     assert result["tier"] == "insufficient_data"
 
 
-def test_compute_match_score_strong_sharp_convergence():
+def test_compute_match_score_strong_sharp_when_ah_and_x2_agree():
     ml = [
         ml_point(48, 0.40, 0.30, 0.30, limit=2500.0),
-        ml_point(1, 0.46, 0.28, 0.26, limit=1000.0),  # 60% limit drop, home backed
+        ml_point(1, 0.46, 0.28, 0.26, limit=1000.0),  # home backed
     ]
     sp = [
         sp_point(48, -0.25, limit=5000.0),
@@ -434,7 +419,7 @@ def test_compute_match_score_strong_sharp_convergence():
     result = compute_match_score(ml, sp, KICKOFF, now=KICKOFF - timedelta(hours=0.5))
     assert result["tier"] == "strong_sharp"
     assert result["sharp_side"] == "home"
-    assert result["convergence_bonus"] == CONFIG["convergence_bonus"]
+    assert "limit_bonus" not in result and "convergence_bonus" not in result
 
 
 def test_compute_match_score_quiet_market_is_no_signal():
@@ -461,3 +446,16 @@ def test_compute_match_score_flat_line_uses_probability_fallback():
     assert result["ah_score"] == CONFIG["x2_score_strong"]
     assert result["sharp_side"] == "home"
     assert result["tier"] == "strong_sharp"
+
+
+def test_limit_changes_do_not_affect_the_score():
+    """Limit movement was removed from scoring: a collapsing limit scores the same as a steady one."""
+    sp_steady = [sp_point(48, -0.25, limit=5000.0), sp_point(1, -1.5, limit=5000.0)]
+    sp_dropped = [sp_point(48, -0.25, limit=5000.0), sp_point(1, -1.5, limit=500.0)]
+    ml_steady = [ml_point(48, 0.40, 0.30, 0.30, limit=2500.0), ml_point(1, 0.42, 0.29, 0.29, limit=2500.0)]
+    ml_dropped = [ml_point(48, 0.40, 0.30, 0.30, limit=2500.0), ml_point(1, 0.42, 0.29, 0.29, limit=200.0)]
+    now = KICKOFF - timedelta(hours=0.5)
+    a = compute_match_score(ml_steady, sp_steady, KICKOFF, now=now)
+    b = compute_match_score(ml_dropped, sp_dropped, KICKOFF, now=now)
+    assert a["total_score"] == b["total_score"] and a["tier"] == b["tier"]
+    assert a["total_score"] == pytest.approx(1.4 * a["ah_score"] + a["x2_score"])

@@ -249,7 +249,6 @@ let summaryTimer = null;
 function summaryCells(r) {
   const ah = r.ah_detail || {};
   const x2 = r.x2_detail || {};
-  const lim = r.limit_detail || {};
   const tier = r.tier || "insufficient_data";
   return [
     new Date(r.start_time).toLocaleString(),
@@ -260,10 +259,8 @@ function summaryCells(r) {
     r.sharp_side || "—",
     fmtNum(r.total_score, 1),
     fmtPp(x2.home_pp !== undefined ? (Math.abs(x2.home_pp) >= Math.abs(x2.away_pp) ? x2.home_pp : x2.away_pp) : null),
-    fmtPct(lim.moneyline_limit_drop_pct),
     ah.opening !== undefined && ah.opening !== null ? `${fmtNum(ah.opening)} → ${fmtNum(ah.current)}` : "—",
     ah.magnitude !== undefined ? fmtNum(ah.shift, 2) : "—",
-    fmtPct(lim.spread_limit_drop_pct),
   ];
 }
 
@@ -311,7 +308,7 @@ function patchSummaryRow(tr, r) {
 function renderSummary(rows) {
   const body = document.getElementById("summary-body");
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="13" class="dim">No matches in this round yet — use Discovery to add the Megajackpot fixtures.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="11" class="dim">No matches in this round yet — use Discovery to add the Megajackpot fixtures.</td></tr>`;
     return;
   }
   const existing = Array.from(body.querySelectorAll("tr[data-id]"));
@@ -825,7 +822,6 @@ function renderCards(detail) {
   }
   const ah = sig.ah_line_shift?.detail_json || {};
   const x2 = sig.x2_displacement?.detail_json || {};
-  const lim = sig.limit_movement?.detail_json || {};
   const vel = sig.velocity_shape?.detail_json || {};
   const fav = sig.favorite_strength?.detail_json || {};
   const favTeamName = fav.favorite === "home" ? detail.matchup.home_team
@@ -850,7 +846,7 @@ function renderCards(detail) {
     <div class="card">
       <h4>Tier</h4>
       <div class="value"><span class="tier-badge tier-${s.tier}">${s.tier.replace("_", " ")}</span></div>
-      <div class="sub">total score ${fmtNum(s.total_score, 2)} (AH ${fmtNum(s.ah_score)} × 1.4 + 1X2 ${fmtNum(s.x2_score)} + limit ${fmtNum(s.limit_bonus)} + convergence ${fmtNum(s.convergence_bonus)})</div>
+      <div class="sub">total score ${fmtNum(s.total_score, 2)} (AH ${fmtNum(s.ah_score)} × 1.4 + 1X2 ${fmtNum(s.x2_score)})</div>
     </div>
     <div class="card">
       <h4>Sharp side</h4>
@@ -884,11 +880,6 @@ function renderCards(detail) {
       <div class="sub">from true opening line</div>
       ${x2.swung_back ? `<div class="sub">⚠ swung back: peaked at ${fmtPp(x2.peak_pp)} ${x2.peak_side} earlier, since retraced — not scored, shown for context only</div>` : ""}
       ${x2HistoryDropdown}
-    </div>
-    <div class="card">
-      <h4>Limit movement</h4>
-      <div class="value">${fmtPct(lim.moneyline_limit_drop_pct)} 1X2 / ${fmtPct(lim.spread_limit_drop_pct)} AH</div>
-      <div class="sub">% drop vs opening market limit</div>
     </div>
     <div class="card card-experimental card-wide">
       <h4>Move shape <span class="pill-experimental">watch only</span></h4>

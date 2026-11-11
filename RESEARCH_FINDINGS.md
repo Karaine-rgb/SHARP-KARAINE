@@ -743,6 +743,13 @@ the CSV export has seven derived margin columns per row. Both are descriptive
 only: given the findings above, the split is computed from the prices and has
 not been shown to predict anything.
 
+**Note (tool change):** limit movement - the "Limit movement" card, the two
+limit-change columns in the match list, its score bonus, the convergence
+bonus that depended on it, and the stored `limit_movement` signal - has been
+removed from the tool. The raw limit amounts are still collected, charted in
+the raw data study, and exported, because the margin formulas in section 14
+use them. Scores are now 1.4 * AH + 1X2 only; the tier cutoffs are unchanged.
+
 ## 15. Open threads, if more data or time becomes available
 
 - With multi-bookmaker data (odds API), test the PDF's cross-bookmaker
