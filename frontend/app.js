@@ -239,56 +239,144 @@ function tickCountdowns() {
   });
 }
 
-async function loadSummary() {
-  const qs = currentRound ? `?round_label=${encodeURIComponent(currentRound)}` : "";
-  const rows = await api(`/matches/summary${qs}`);
+// The summary table is refreshed by a 30s timer and after every poll. Rebuilding
+// it each time made the whole table flash and wiped any scores being typed, so:
+// nothing is touched when the data is unchanged, changed rows are patched cell
+// by cell, and score inputs that are focused or hold unsaved edits are left alone.
+let lastSummarySig = null;
+let summaryTimer = null;
+
+function summaryCells(r) {
+  const ah = r.ah_detail || {};
+  const x2 = r.x2_detail || {};
+  const lim = r.limit_detail || {};
+  const tier = r.tier || "insufficient_data";
+  return [
+    new Date(r.start_time).toLocaleString(),
+    null, // countdown cell is updated by tickCountdowns()
+    `${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)}`,
+    escapeHtml(r.league_name || ""),
+    `<span class="tier-badge tier-${tier}">${tier.replace("_", " ")}</span>`,
+    r.sharp_side || "—",
+    fmtNum(r.total_score, 1),
+    fmtPp(x2.home_pp !== undefined ? (Math.abs(x2.home_pp) >= Math.abs(x2.away_pp) ? x2.home_pp : x2.away_pp) : null),
+    fmtPct(lim.moneyline_limit_drop_pct),
+    ah.opening !== undefined && ah.opening !== null ? `${fmtNum(ah.opening)} → ${fmtNum(ah.current)}` : "—",
+    ah.magnitude !== undefined ? fmtNum(ah.shift, 2) : "—",
+    fmtPct(lim.spread_limit_drop_pct),
+  ];
+}
+
+function scoreValue(v) {
+  return v !== null && v !== undefined ? String(v) : "";
+}
+
+function buildSummaryRow(r) {
+  const cells = summaryCells(r);
+  const tds = cells
+    .map((html, i) =>
+      i === 1
+        ? `<td class="countdown" data-start="${r.start_time}">—</td>`
+        : `<td${i === 3 ? ' class="dim"' : ""}>${html}</td>`
+    )
+    .join("");
+  return `<tr data-id="${r.id}">${tds}
+    <td class="result-cell">
+      <input type="number" class="result-input" data-side="home" value="${scoreValue(r.home_score)}" placeholder="H" min="0">
+      <span class="dim">-</span>
+      <input type="number" class="result-input" data-side="away" value="${scoreValue(r.away_score)}" placeholder="A" min="0">
+      <button type="button" class="btn btn-ghost result-save" title="Save result">✓</button>
+    </td>
+  </tr>`;
+}
+
+function patchSummaryRow(tr, r) {
+  summaryCells(r).forEach((html, i) => {
+    const td = tr.children[i];
+    if (i === 1) {
+      if (td.dataset.start !== r.start_time) td.dataset.start = r.start_time;
+    } else if (td.dataset.h !== html) {
+      td.innerHTML = html;
+      td.dataset.h = html;
+    }
+  });
+  [["home", r.home_score], ["away", r.away_score]].forEach(([side, v]) => {
+    const input = tr.querySelector(`.result-input[data-side="${side}"]`);
+    if (input.dataset.dirty === "1" || document.activeElement === input) return;
+    const value = scoreValue(v);
+    if (input.value !== value) input.value = value;
+  });
+}
+
+function renderSummary(rows) {
   const body = document.getElementById("summary-body");
   if (!rows.length) {
     body.innerHTML = `<tr><td colspan="13" class="dim">No matches in this round yet — use Discovery to add the Megajackpot fixtures.</td></tr>`;
     return;
   }
-  body.innerHTML = rows
-    .map((r) => {
-      const ah = r.ah_detail || {};
-      const x2 = r.x2_detail || {};
-      const lim = r.limit_detail || {};
-      const tier = r.tier || "insufficient_data";
-      const kickoff = new Date(r.start_time);
-      const hs = r.home_score !== null && r.home_score !== undefined ? r.home_score : "";
-      const as = r.away_score !== null && r.away_score !== undefined ? r.away_score : "";
-      return `
-      <tr data-id="${r.id}">
-        <td>${kickoff.toLocaleString()}</td>
-        <td class="countdown" data-start="${r.start_time}">—</td>
-        <td>${r.home_team} vs ${r.away_team}</td>
-        <td class="dim">${r.league_name || ""}</td>
-        <td><span class="tier-badge tier-${tier}">${tier.replace("_", " ")}</span></td>
-        <td>${r.sharp_side || "—"}</td>
-        <td>${fmtNum(r.total_score, 1)}</td>
-        <td>${fmtPp(x2.home_pp !== undefined ? (Math.abs(x2.home_pp) >= Math.abs(x2.away_pp) ? x2.home_pp : x2.away_pp) : null)}</td>
-        <td>${fmtPct(lim.moneyline_limit_drop_pct)}</td>
-        <td>${ah.opening !== undefined && ah.opening !== null ? `${fmtNum(ah.opening)} → ${fmtNum(ah.current)}` : "—"}</td>
-        <td>${ah.magnitude !== undefined ? fmtNum(ah.shift, 2) : "—"}</td>
-        <td>${fmtPct(lim.spread_limit_drop_pct)}</td>
-        <td class="result-cell">
-          <input type="number" class="result-input" data-side="home" value="${hs}" placeholder="H" min="0">
-          <span class="dim">-</span>
-          <input type="number" class="result-input" data-side="away" value="${as}" placeholder="A" min="0">
-          <button type="button" class="btn btn-ghost result-save" title="Save result">✓</button>
-        </td>
-      </tr>`;
-    })
-    .join("");
-
-  body.querySelectorAll("tr[data-id]").forEach((tr) => {
-    tr.addEventListener("click", (e) => {
-      if (e.target.closest(".result-cell")) return;
-      openDrilldown(Number(tr.dataset.id));
+  const existing = Array.from(body.querySelectorAll("tr[data-id]"));
+  const sameRows = existing.length === rows.length && existing.every((tr, i) => Number(tr.dataset.id) === rows[i].id);
+  if (sameRows) {
+    rows.forEach((r, i) => patchSummaryRow(existing[i], r));
+    return;
+  }
+  // Row set changed (new round, match added/removed): rebuild, carrying over unsaved scores.
+  const unsaved = {};
+  existing.forEach((tr) => {
+    const inputs = tr.querySelectorAll('.result-input[data-dirty="1"]');
+    if (inputs.length) {
+      unsaved[tr.dataset.id] = {};
+      inputs.forEach((inp) => (unsaved[tr.dataset.id][inp.dataset.side] = inp.value));
+    }
+  });
+  body.innerHTML = rows.map(buildSummaryRow).join("");
+  rows.forEach((r, i) => {
+    const tr = body.children[i];
+    summaryCells(r).forEach((html, c) => {
+      if (c !== 1) tr.children[c].dataset.h = html;
     });
   });
-  body.querySelectorAll(".result-save").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const tr = btn.closest("tr[data-id]");
+  Object.entries(unsaved).forEach(([id, sides]) => {
+    const tr = body.querySelector(`tr[data-id="${id}"]`);
+    if (!tr) return;
+    Object.entries(sides).forEach(([side, value]) => {
+      const inp = tr.querySelector(`.result-input[data-side="${side}"]`);
+      inp.value = value;
+      inp.dataset.dirty = "1";
+    });
+  });
+}
+
+async function loadSummary(force = false) {
+  const qs = currentRound ? `?round_label=${encodeURIComponent(currentRound)}` : "";
+  const rows = await api(`/matches/summary${qs}`);
+  const sig = `${currentRound}|${JSON.stringify(rows)}`;
+  if (!force && sig === lastSummarySig) return;
+  lastSummarySig = sig;
+  renderSummary(rows);
+  tickCountdowns();
+}
+
+// Poll results arrive in bursts (one per match); fold them into one refresh.
+function scheduleSummaryRefresh() {
+  if (summaryTimer) return;
+  summaryTimer = setTimeout(() => {
+    summaryTimer = null;
+    loadSummary().catch(() => {});
+  }, 1000);
+}
+
+// One set of listeners on the table body (rows are patched, not recreated).
+(function bindSummaryTable() {
+  const body = document.getElementById("summary-body");
+  body.addEventListener("input", (e) => {
+    if (e.target.matches(".result-input")) e.target.dataset.dirty = "1";
+  });
+  body.addEventListener("click", async (e) => {
+    const tr = e.target.closest("tr[data-id]");
+    if (!tr) return;
+    const btn = e.target.closest(".result-save");
+    if (btn) {
       const homeInput = tr.querySelector('.result-input[data-side="home"]');
       const awayInput = tr.querySelector('.result-input[data-side="away"]');
       const home_score = homeInput.value === "" ? null : Number(homeInput.value);
@@ -296,13 +384,18 @@ async function loadSummary() {
       btn.disabled = true;
       try {
         await api(`/matches/${tr.dataset.id}/result`, { method: "PATCH", body: JSON.stringify({ home_score, away_score }) });
+        delete homeInput.dataset.dirty;
+        delete awayInput.dataset.dirty;
+        await loadSummary();
       } finally {
         btn.disabled = false;
       }
-    });
+      return;
+    }
+    if (e.target.closest(".result-cell")) return;
+    openDrilldown(Number(tr.dataset.id));
   });
-  tickCountdowns();
-}
+})();
 
 // ---------------------------------------------------------------------------
 // Settings
@@ -346,7 +439,12 @@ function fmtBytes(n) {
   return `${Math.max(1, Math.round(n / 1e3))} KB`;
 }
 
+let lastStorageSig = null;
+
 function renderStorageUsage(u) {
+  const sig = JSON.stringify(u);
+  if (sig === lastStorageSig) return;
+  lastStorageSig = sig;
   const banner = document.getElementById("storage-banner");
   banner.className = `pill storage-pill storage-${u.level}`;
   banner.textContent = `DB ${fmtBytes(u.used_bytes)} / ${fmtBytes(u.limit_bytes)}`;
@@ -1100,22 +1198,35 @@ function connectWs() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${proto}://${location.host}${API}/ws`);
   const status = document.getElementById("ws-status");
+  let ping = null;
+  let notice = null;
   ws.onopen = () => {
+    clearTimeout(notice);
     status.textContent = "live";
     status.className = "pill pill-ok";
+    // Idle sockets get dropped by proxies, which made the status flip to
+    // "reconnecting" over and over; a small ping keeps the connection open.
+    ping = setInterval(() => ws.readyState === WebSocket.OPEN && ws.send("ping"), 25000);
   };
   ws.onclose = () => {
-    status.textContent = "reconnecting…";
-    status.className = "pill pill-err";
-    setTimeout(connectWs, 3000);
+    clearInterval(ping);
+    // Reconnect quietly; only show "reconnecting" if it takes more than a few seconds.
+    notice = setTimeout(() => {
+      status.textContent = "reconnecting…";
+      status.className = "pill pill-err";
+    }, 4000);
+    setTimeout(connectWs, 1500);
   };
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
     if (msg.type === "storage_paused" || msg.type === "storage_resumed") {
       refreshStorageBanner();
     } else if (msg.type === "match_update" || msg.type === "error") {
-      loadSummary();
-      if (currentDrilldownId === msg.matchup_id) openDrilldown(msg.matchup_id);
+      scheduleSummaryRefresh();
+      // Rebuilding the drill-down redraws every chart, so only do it when new prices arrived.
+      if (msg.type === "match_update" && msg.changed && currentDrilldownId === msg.matchup_id) {
+        openDrilldown(msg.matchup_id);
+      }
     } else if (msg.type === "auto_unmonitored") {
       loadRounds(currentRound).then(loadSummary);
       if (currentDrilldownId === msg.matchup_id) {
@@ -1132,7 +1243,9 @@ async function init() {
   connectWs();
   refreshStorageBanner();
   setInterval(refreshStorageBanner, 60000);
-  setInterval(loadSummary, 30000);
+  setInterval(() => {
+    if (!document.hidden) loadSummary().catch(() => {});
+  }, 30000);
   setInterval(tickCountdowns, 1000);
 }
 init();
