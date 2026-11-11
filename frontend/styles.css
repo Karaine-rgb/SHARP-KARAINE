@@ -236,3 +236,12 @@ tbody tr:hover { background: var(--bg-elevated); }
 .margin-section h3 { color: var(--accent); font-size: 13px; border-top: 1px solid var(--border); padding-top: 16px; }
 .margin-controls { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin: 8px 0; font-size: 12px; }
 #margin-summary { margin: 6px 0; color: var(--text-dim); }
+
+.storage-table-wrap { max-height: 45vh; overflow: auto; border: 1px solid var(--border); margin: 8px 0; }
+#storage-table { font-size: 12px; }
+#storage-table tbody tr { cursor: default; }
+#storage-summary, #storage-message { margin: 6px 0; color: var(--text-dim); }
+.btn-danger { color: #ff453a; border-color: #ff453a; }
+#modal-storage .modal-card { width: 780px; max-width: 95vw; }
+#storage-table td:first-child { white-space: normal; word-break: break-word; max-width: 300px; }
+#storage-table td:last-child { text-align: right; }

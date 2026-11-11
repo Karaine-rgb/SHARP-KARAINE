@@ -256,6 +256,111 @@ async def list_rounds():
     return [dict(r) for r in rows]
 
 
+# ---------------------------------------------------------------------------
+# Storage: see what is using the database and delete old rounds to free space
+# ---------------------------------------------------------------------------
+
+_DATA_TABLES = ("market_snapshots", "signals", "match_scores", "alerts_sent")
+_SIZE_QUERY = "select pg_database_size(current_database())"
+
+
+@router.get("/storage")
+async def storage_overview():
+    """Database size, per-table size, and each round's match/snapshot counts
+    with an estimated size, so old rounds can be judged before deleting.
+
+    Per-round size is an estimate: the round's share of all snapshots times
+    the combined size of the tables that hold per-match data. Table sizes
+    include dead rows until space is reclaimed, so after a delete the
+    reported database size only drops once reclaim has run.
+    """
+    db_bytes = await db.fetchval(_SIZE_QUERY)
+    tables = await db.fetch(
+        """
+        select c.relname as name, pg_total_relation_size(c.oid) as bytes
+        from pg_class c join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'public' and c.relkind = 'r'
+        order by 2 desc
+        """
+    )
+    rounds = await db.fetch(
+        """
+        select
+            coalesce(m.mjp_round_label, '(unlabeled)') as round_label,
+            count(distinct m.id) as match_count,
+            count(s.id) as snapshot_count,
+            coalesce(bool_or(m.is_monitored), false) as is_active,
+            min(m.start_time) as earliest_kickoff
+        from matchups m
+        left join market_snapshots s on s.matchup_id = m.id
+        group by 1
+        order by min(m.start_time) desc
+        """
+    )
+    table_list = [{"name": t["name"], "bytes": int(t["bytes"])} for t in tables]
+    data_bytes = sum(t["bytes"] for t in table_list if t["name"] in _DATA_TABLES)
+    total_snaps = sum(int(r["snapshot_count"]) for r in rounds) or 1
+    out_rounds = []
+    for r in rounds:
+        d = dict(r)
+        d["snapshot_count"] = int(d["snapshot_count"])
+        d["match_count"] = int(d["match_count"])
+        d["est_bytes"] = int(data_bytes * d["snapshot_count"] / total_snaps)
+        out_rounds.append(d)
+    return {"db_bytes": int(db_bytes), "tables": table_list, "rounds": out_rounds}
+
+
+@router.delete("/rounds")
+async def delete_round(round_label: str, confirm: str):
+    """Permanently delete a round: its matches and, through the foreign keys'
+    on-delete-cascade, every snapshot, signal, score and alert for them.
+
+    round_label is a query parameter (labels contain slashes). confirm must
+    repeat the label exactly, so a stray request cannot delete anything.
+    Refuses while any match in the round is still monitored - stop tracking
+    it first so the poller is not writing to rows being deleted.
+    """
+    if confirm != round_label:
+        raise HTTPException(status_code=400, detail="confirm must repeat the round label exactly")
+    if round_label == "(unlabeled)":
+        condition, params = "mjp_round_label is null", []
+    else:
+        condition, params = "mjp_round_label = $1", [round_label]
+    matches = await db.fetch(f"select id, is_monitored from matchups where {condition}", *params)
+    if not matches:
+        raise HTTPException(status_code=404, detail="no such round")
+    if any(m["is_monitored"] for m in matches):
+        raise HTTPException(
+            status_code=409,
+            detail="this round still has monitored matches - stop tracking it before deleting",
+        )
+    ids = [m["id"] for m in matches]
+    snapshots = await db.fetchval(
+        "select count(*) from market_snapshots where matchup_id = any($1::bigint[])", ids
+    )
+    # One match at a time keeps each transaction small on a free-tier database.
+    for matchup_id in ids:
+        await db.execute("delete from matchups where id = $1", matchup_id)
+    return {"ok": True, "deleted_matches": len(ids), "deleted_snapshots": int(snapshots or 0)}
+
+
+@router.post("/storage/reclaim")
+async def reclaim_space():
+    """Rewrite the data tables so deleted rows' space is returned to the
+    database's size accounting (VACUUM FULL). Plain deletes only mark space
+    reusable; the free-tier size meter does not drop until this runs. It
+    takes an exclusive lock on each table while it works.
+    """
+    before = int(await db.fetchval(_SIZE_QUERY))
+    try:
+        for table in (*_DATA_TABLES, "matchups"):
+            await db.execute(f"vacuum full {table}")
+    except Exception as exc:  # surface the database's own message to the UI
+        raise HTTPException(status_code=500, detail=f"reclaim failed: {exc}")
+    after = int(await db.fetchval(_SIZE_QUERY))
+    return {"ok": True, "before_bytes": before, "after_bytes": after}
+
+
 @router.get("/export/match-snapshots.csv")
 async def export_match_snapshots_csv(round_label: str | None = None):
     """One complete, download-ready file for backtesting: every raw market

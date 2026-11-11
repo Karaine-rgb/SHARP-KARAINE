@@ -334,6 +334,100 @@ document.getElementById("btn-settings-save").onclick = async () => {
 };
 
 // ---------------------------------------------------------------------------
+// Storage: database size and deleting old rounds
+// ---------------------------------------------------------------------------
+
+function escapeHtml(v) {
+  return String(v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function fmtBytes(n) {
+  if (n >= 1e9) return `${(n / 1e9).toFixed(2)} GB`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(n / 1e3))} KB`;
+}
+
+let storageRounds = [];
+
+async function loadStorage() {
+  const msg = document.getElementById("storage-message");
+  const data = await api("/storage");
+  storageRounds = data.rounds;
+  const top = data.tables.slice(0, 3).map((t) => `${t.name} ${fmtBytes(t.bytes)}`).join(" · ");
+  document.getElementById("storage-summary").textContent = `Database size ${fmtBytes(data.db_bytes)} (${top})`;
+  document.getElementById("storage-table-body").innerHTML = data.rounds
+    .map((r, i) => {
+      const csv = `/api/export/match-snapshots.csv?round_label=${encodeURIComponent(r.round_label)}`;
+      const del = r.is_active
+        ? `<span class="dim" title="Stop tracking this round first (Start New Round)">live - cannot delete</span>`
+        : `<button class="btn btn-danger" data-delete-round="${i}">Delete</button>`;
+      return `<tr>
+        <td>${escapeHtml(r.round_label)}</td>
+        <td>${r.match_count}</td>
+        <td>${r.snapshot_count.toLocaleString()}</td>
+        <td>${fmtBytes(r.est_bytes)}</td>
+        <td><a class="btn btn-ghost" href="${csv}" download>CSV</a> ${del}</td>
+      </tr>`;
+    })
+    .join("");
+  msg.textContent = "";
+}
+
+document.getElementById("btn-storage").onclick = () => {
+  document.getElementById("modal-storage").classList.remove("hidden");
+  loadStorage().catch((e) => (document.getElementById("storage-message").textContent = `Could not load storage: ${e.message}`));
+};
+document.getElementById("btn-storage-close").onclick = () =>
+  document.getElementById("modal-storage").classList.add("hidden");
+
+document.getElementById("storage-table-body").onclick = async (ev) => {
+  const btn = ev.target.closest("[data-delete-round]");
+  if (!btn) return;
+  const r = storageRounds[Number(btn.dataset.deleteRound)];
+  const msg = document.getElementById("storage-message");
+  const typed = window.prompt(
+    `Permanently delete "${r.round_label}"?\n\n${r.match_count} matches and ${r.snapshot_count.toLocaleString()} snapshots (~${fmtBytes(r.est_bytes)}) will be removed and cannot be recovered.\n\nType the round label exactly to confirm:`
+  );
+  if (typed === null) return;
+  if (typed !== r.round_label) {
+    msg.textContent = "Label did not match - nothing was deleted.";
+    return;
+  }
+  btn.disabled = true;
+  msg.textContent = "Deleting...";
+  try {
+    const out = await api(
+      `/rounds?round_label=${encodeURIComponent(r.round_label)}&confirm=${encodeURIComponent(typed)}`,
+      { method: "DELETE" }
+    );
+    await loadStorage();
+    msg.textContent = `Deleted ${out.deleted_matches} matches and ${out.deleted_snapshots.toLocaleString()} snapshots. Run "Reclaim disk space" to lower the size meter.`;
+    await loadRounds();
+    await loadSummary();
+    await loadDownloadRounds();
+  } catch (e) {
+    btn.disabled = false;
+    msg.textContent = `Delete failed: ${e.message}`;
+  }
+};
+
+document.getElementById("btn-reclaim").onclick = async () => {
+  const msg = document.getElementById("storage-message");
+  if (!confirm("Reclaim disk space? This briefly locks the data tables while they are rewritten (live polling pauses until it finishes) and can take a minute on a large database.")) return;
+  const btn = document.getElementById("btn-reclaim");
+  btn.disabled = true;
+  msg.textContent = "Reclaiming...";
+  try {
+    const out = await api("/storage/reclaim", { method: "POST" });
+    await loadStorage();
+    msg.textContent = `Database size ${fmtBytes(out.before_bytes)} -> ${fmtBytes(out.after_bytes)}.`;
+  } catch (e) {
+    msg.textContent = `Reclaim failed: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+// ---------------------------------------------------------------------------
 // Discovery
 // ---------------------------------------------------------------------------
 
