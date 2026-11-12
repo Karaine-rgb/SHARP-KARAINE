@@ -250,14 +250,44 @@ let summaryTimer = null;
 const STEAM_COLOR = "#ff2fa0";
 const SIDE_LABEL = { home: "Home", draw: "Draw", away: "Away" };
 
+// Early / late steam: a steam swing is "late" if it finished within 3 hours of
+// kickoff, "early" if it finished before that (see CONFIG["late_steam_hours"]).
+const TIMING_NAME = { early: "early", late: "late" };
+
+function fmtHoursBefore(h) {
+  if (h == null) return "";
+  return h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : `${h.toFixed(1)} h`;
+}
+
+function timingTag(timing) {
+  return `<span class="steam-tag steam-${timing} is-ranked">${TIMING_NAME[timing]}</span>`;
+}
+
+// the ranked swing's tag shows only its timing (its size is the bold number);
+// the other period's tag also carries that period's biggest swing
+function steamTag(timing, pp, ranked) {
+  return ranked ? timingTag(timing) : `<span class="steam-tag steam-${timing}">${TIMING_NAME[timing]} +${pp.toFixed(2)}pp</span>`;
+}
+
 // Sides that have had a steam move, biggest first (server-ranked), as chips.
+// The bold number is the side's biggest steam swing (what it is ranked on); the
+// tag next to it says whether that swing was early or late, and a second tag
+// shows the biggest swing of the other period if the side had one.
 function steamChips(moves) {
   if (!moves || !moves.length) return `<span class="dim">—</span>`;
   return moves
-    .map(
-      (m) =>
-        `<span class="steam-chip" title="Biggest steam move on ${SIDE_LABEL[m.side]}${m.count > 1 ? ` (${m.count} steam moves)` : ""}"><span class="steam-dot"></span>${SIDE_LABEL[m.side]} <strong>+${m.magnitude_pp.toFixed(2)}pp</strong></span>`
-    )
+    .map((m) => {
+      const other = m.timing === "late" ? ["early", m.early_pp] : m.timing === "early" ? ["late", m.late_pp] : null;
+      const tags = m.timing
+        ? steamTag(m.timing, m.magnitude_pp, true) + (other && other[1] != null ? steamTag(other[0], other[1], false) : "")
+        : "";
+      const title =
+        `Biggest steam move on ${SIDE_LABEL[m.side]}: +${m.magnitude_pp.toFixed(2)}pp` +
+        (m.timing ? `, ${TIMING_NAME[m.timing]} (finished ${fmtHoursBefore(m.hours_before_kickoff)} before kickoff; late = within the last 3 h)` : "") +
+        (other && other[1] != null ? `. Also ${other[0]} steam +${other[1].toFixed(2)}pp` : "") +
+        (m.count > 1 ? `. ${m.count} steam moves in total` : "");
+      return `<span class="steam-chip" title="${title}"><span class="steam-dot"></span>${SIDE_LABEL[m.side]} <strong>+${m.magnitude_pp.toFixed(2)}pp</strong>${tags}</span>`;
+    })
     .join("");
 }
 
@@ -930,13 +960,20 @@ function renderCards(detail) {
   const fmtWhen = (iso) => new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   const teamFor = { home: detail.matchup.home_team, draw: "Draw", away: detail.matchup.away_team };
   const steam = detail.steam_moves || [];
+  const swingLine = (sw, ranked) =>
+    `<li class="steam-swing${ranked ? " is-ranked" : ""}">` +
+    (sw.timing ? timingTag(sw.timing) : "") +
+    ` <span class="steam-mag-sm">${sw.change_pp < 0 ? "−" : "+"}${sw.magnitude_pp.toFixed(2)}pp</span>` +
+    `<span class="sub"> ${fmtWhen(sw.from)} → ${fmtWhen(sw.to)}${sw.hours_before_kickoff != null ? ` · finished ${fmtHoursBefore(sw.hours_before_kickoff)} before kickoff` : ""}${ranked ? " · ranked on this one" : ""}</span></li>`;
   const steamRows = steam.length
     ? `<ol class="steam-list">${steam
         .map(
           (m) =>
-            `<li><span class="steam-dot"></span><strong>${escapeHtml(teamFor[m.side])}</strong> <span class="steam-mag">+${m.magnitude_pp.toFixed(2)}pp</span><span class="sub"> ${fmtWhen(m.from)} → ${fmtWhen(m.to)}${m.count > 1 ? ` · ${m.count} steam moves` : ""}</span></li>`
+            `<li><div class="steam-head"><span class="steam-dot"></span><strong>${escapeHtml(teamFor[m.side])}</strong> <span class="steam-mag">+${m.magnitude_pp.toFixed(2)}pp</span>${m.timing ? steamTag(m.timing, m.magnitude_pp, true) : ""}</div>` +
+            `<ul class="steam-swings">${(m.swings || []).map((sw, i) => swingLine(sw, i === 0)).join("")}</ul></li>`
         )
-        .join("")}</ol>`
+        .join("")}</ol>
+       <div class="sub steam-explain">Each side is ranked on its biggest steam swing (the number in bold); the list under it shows every steam swing it had. <strong>Early</strong> = the swing finished more than 3 h before kickoff, <strong>late</strong> = within the last 3 h.</div>`
     : `<div class="value dim">No steam move yet</div><div class="sub">A steam move is a fast swing of 0.8pp or more on a 1X2 line, seen in the 1X2 chart below.</div>`;
 
   cardsEl.innerHTML = `

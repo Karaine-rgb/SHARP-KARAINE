@@ -424,9 +424,31 @@ tbody tr:hover { background: rgba(56, 214, 255, 0.05); }
   box-shadow: 0 0 14px rgba(255, 47, 160, 0.25);
 }
 .steam-chip strong { color: #fff; font-variant-numeric: tabular-nums; }
-.card-steam .steam-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 8px; counter-reset: steam; }
-.card-steam .steam-list li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; font-size: 16px; }
-.card-steam .steam-list li::before { counter-increment: steam; content: counter(steam) "."; color: var(--text-dim); font-weight: 700; min-width: 18px; }
+.card-steam .steam-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 12px; counter-reset: steam; }
+.card-steam .steam-list > li { display: grid; grid-template-columns: 22px 1fr; gap: 4px 6px; font-size: 16px; }
+.card-steam .steam-list > li::before { counter-increment: steam; content: counter(steam) "."; color: var(--text-dim); font-weight: 700; grid-row: 1; }
+.steam-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; grid-column: 2; }
+.steam-swings { list-style: none; margin: 0; padding: 0; grid-column: 2; display: grid; gap: 3px; }
+.steam-swings .steam-swing { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; font-size: 13.5px; }
+.steam-swings .steam-swing.is-ranked .steam-mag-sm { color: var(--steam); }
+.steam-mag-sm { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--text); }
+.steam-explain { margin-top: 10px; }
+.steam-explain strong { color: var(--text); }
+.steam-tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  line-height: 1.5;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.steam-early { color: #7fe3ff; border-color: rgba(56, 214, 255, 0.55); background: rgba(56, 214, 255, 0.1); }
+.steam-late { color: #ffc36b; border-color: rgba(255, 159, 26, 0.6); background: rgba(255, 159, 26, 0.12); }
+.steam-tag:not(.is-ranked) { opacity: 0.8; font-weight: 600; }
 .steam-mag { font-family: var(--display); font-size: 17px; color: var(--steam); text-shadow: 0 0 14px rgba(255, 47, 160, 0.45); }
 
 .countdown { font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 13px; }

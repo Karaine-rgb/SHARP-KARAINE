@@ -33,6 +33,10 @@ CONFIG = {
     # move_span_min_pp: smallest swing on a 1X2 line that gets a move shape (and a
     # colour) on the chart; the engine's own "meaningful" 1X2 move size.
     "move_span_min_pp": 0.80,
+    # steam_moves(): a steam swing is "late" when it finished within this many
+    # hours of kickoff, "early" when it finished earlier. 3h is the same window
+    # velocity_shape() uses to judge whether a move was fast enough to be steam.
+    "late_steam_hours": 3.0,
     "velocity_window_hours": 3.0,
     "velocity_min_window_hours": 0.25,  # 15 min - below this, a window is too short to be meaningful given real poll spacing
     "velocity_steam_ratio": 0.70,
@@ -542,7 +546,7 @@ def ah_view(spread_series: list[dict]) -> dict:
     return ah
 
 
-def steam_moves(moneyline_series: list[dict]) -> list[dict]:
+def steam_moves(moneyline_series: list[dict], kickoff: datetime | None = None) -> list[dict]:
     """Every side that has had a steam move at any moment, ranked by the size
     of its biggest steam move (largest first).
 
@@ -551,20 +555,49 @@ def steam_moves(moneyline_series: list[dict]) -> list[dict]:
     velocity_shape() reads as steam when it stopped. Per side this returns the
     biggest such swing (magnitude_pp, from, to) and how many steam moves the
     side has had. Sides without a steam move are not listed.
+
+    With the match's kickoff, each swing is also labelled by when it finished:
+    "late" if within CONFIG["late_steam_hours"] of kickoff, else "early". Each
+    side then carries the timing of its biggest swing (timing), the biggest
+    early and late swings separately (early_pp, late_pp; None if there was
+    none), and every steam swing (swings, biggest first) - so the ranked
+    magnitude can be traced to the swing it came from. Without a kickoff the
+    timing fields are None.
     """
-    best: dict[str, dict] = {}
+    late_hours = CONFIG["late_steam_hours"]
+
+    def timing_of(end) -> tuple[str | None, float | None]:
+        if kickoff is None:
+            return None, None
+        try:
+            hours = (kickoff - end).total_seconds() / 3600.0
+        except TypeError:
+            return None, None
+        return ("late" if hours <= late_hours else "early"), round(hours, 2)
+
+    swings: dict[str, list[dict]] = {}
     for span in move_spans(moneyline_series):
         if span["label"] != "steam":
             continue
-        entry = best.setdefault(
-            span["side"],
-            {"side": span["side"], "magnitude_pp": 0.0, "count": 0, "from": None, "to": None},
-        )
-        entry["count"] += 1
-        if abs(span["change_pp"]) > entry["magnitude_pp"]:
-            entry["magnitude_pp"] = abs(span["change_pp"])
-            entry["from"], entry["to"] = span["from"], span["to"]
-    return sorted(best.values(), key=lambda e: e["magnitude_pp"], reverse=True)
+        timing, hours = timing_of(span["to"])
+        swings.setdefault(span["side"], []).append({
+            "magnitude_pp": abs(span["change_pp"]), "change_pp": span["change_pp"],
+            "from": span["from"], "to": span["to"],
+            "timing": timing, "hours_before_kickoff": hours,
+        })
+    out = []
+    for side, items in swings.items():
+        items.sort(key=lambda x: x["magnitude_pp"], reverse=True)
+        best = items[0]
+        biggest = lambda timing: next((x["magnitude_pp"] for x in items if x["timing"] == timing), None)
+        out.append({
+            "side": side, "magnitude_pp": best["magnitude_pp"], "count": len(items),
+            "from": best["from"], "to": best["to"],
+            "timing": best["timing"], "hours_before_kickoff": best["hours_before_kickoff"],
+            "early_pp": biggest("early"), "late_pp": biggest("late"),
+            "swings": items,
+        })
+    return sorted(out, key=lambda e: e["magnitude_pp"], reverse=True)
 
 
 def x2_transitions(moneyline_series: list[dict], max_evaluations: int = 400) -> list[dict]:

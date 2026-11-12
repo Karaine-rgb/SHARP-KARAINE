@@ -452,6 +452,44 @@ def test_steam_moves_counts_repeated_steam_on_a_side_and_reports_the_biggest():
     assert moves[0]["magnitude_pp"] >= 4.0
 
 
+EARLY_AND_LATE = [
+    ml_point(60, 0.40, 0.30, 0.30), ml_point(50, 0.40, 0.30, 0.30), ml_point(40, 0.40, 0.30, 0.30),
+    ml_point(36, 0.40, 0.30, 0.30), ml_point(35, 0.43, 0.285, 0.285), ml_point(34, 0.47, 0.265, 0.265),
+    ml_point(33.5, 0.45, 0.275, 0.275), ml_point(30, 0.43, 0.285, 0.285), ml_point(24, 0.41, 0.295, 0.295),
+    ml_point(18, 0.40, 0.30, 0.30), ml_point(10, 0.40, 0.30, 0.30), ml_point(5, 0.40, 0.30, 0.30),
+    ml_point(4, 0.40, 0.30, 0.30), ml_point(3.2, 0.44, 0.28, 0.28), ml_point(2.5, 0.48, 0.26, 0.26),
+    ml_point(2, 0.46, 0.27, 0.27), ml_point(1, 0.44, 0.28, 0.28),
+]
+
+
+def test_steam_moves_label_each_swing_early_or_late_and_show_where_the_magnitude_came_from():
+    home = [m for m in steam_moves(EARLY_AND_LATE, KICKOFF) if m["side"] == "home"][0]
+    assert home["magnitude_pp"] == pytest.approx(8.0)           # biggest swing = the late one
+    assert home["timing"] == "late" and home["hours_before_kickoff"] == pytest.approx(2.5)
+    assert home["early_pp"] == pytest.approx(7.0)               # the earlier swing, finished 34h out
+    assert home["late_pp"] == pytest.approx(8.0)
+    assert home["count"] == len(home["swings"]) == 3
+    assert [s["timing"] for s in home["swings"]] == ["late", "early", "late"]
+    assert [round(s["magnitude_pp"], 1) for s in home["swings"]] == [8.0, 7.0, 4.0]
+    assert home["swings"][2]["change_pp"] == pytest.approx(-4.0)   # a falling steam swing keeps its sign
+
+
+def test_steam_moves_without_kickoff_has_no_timing_but_the_same_ranking():
+    plain = steam_moves(EARLY_AND_LATE)
+    timed = steam_moves(EARLY_AND_LATE, KICKOFF)
+    assert [(m["side"], round(m["magnitude_pp"], 6)) for m in plain] == [(m["side"], round(m["magnitude_pp"], 6)) for m in timed]
+    assert all(m["timing"] is None and m["early_pp"] is None and m["late_pp"] is None for m in plain)
+
+
+def test_late_means_finished_within_three_hours_of_kickoff():
+    series = [ml_point(8, 0.40, 0.30, 0.30), ml_point(5, 0.40, 0.30, 0.30), ml_point(4, 0.43, 0.285, 0.285),
+              ml_point(3, 0.50, 0.25, 0.25)]                  # swing finishes exactly 3h before kickoff
+    on_line = [m for m in steam_moves(series, KICKOFF) if m["side"] == "home"][0]
+    assert on_line["hours_before_kickoff"] == pytest.approx(3.0) and on_line["timing"] == "late"
+    just_outside = [m for m in steam_moves(series, KICKOFF + timedelta(minutes=1)) if m["side"] == "home"][0]
+    assert just_outside["timing"] == "early"
+
+
 def test_x2_transitions_records_each_change_of_the_leading_side():
     series = [
         ml_point(48, 0.40, 0.30, 0.30),

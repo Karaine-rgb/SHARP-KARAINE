@@ -629,7 +629,7 @@ async def matches_summary(round_label: str | None = None):
         series = by_match.get(d["id"], {"moneyline": [], "spread": []})
         d["ah_detail"] = ah_view(series["spread"])
         d["x2_detail"] = x2_displacement(series["moneyline"])
-        d["steam_moves"] = steam_moves(series["moneyline"])
+        d["steam_moves"] = steam_moves(series["moneyline"], d["start_time"])
         result.append(d)
     return result
 
@@ -712,7 +712,7 @@ async def match_detail(matchup_id: int):
     return {
         "matchup": dict(matchup),
         "latest_signals": signals_by_type,
-        "steam_moves": steam_moves(series["moneyline"]),
+        "steam_moves": steam_moves(series["moneyline"], matchup["start_time"]),
         "move_spans": move_spans(series["moneyline"]),
         "x2_transitions": x2_transitions(series["moneyline"]),
         "betslip_cutoffs": betslip_cutoffs,
