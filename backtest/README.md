@@ -20,6 +20,7 @@ features and outcomes) and `results/tables.md` (all tables). The written verdict
 | `features.py` | typical-move calibration, z, Agree, Hold, steam score, margin features, outcomes |
 | `stats.py` | bootstrap that resamples whole matches |
 | `run.py` | split, tables, CSV |
+| `early_late.py` | does early steam beat late steam? (`python -m backtest.early_late --data DIR`); output in `results/early_vs_late.md` |
 
 To rerun with more data: drop new exports in the data folder and run again. The split is recomputed (earliest 70% of
 matches by kickoff calibrate, latest 30% are reported). Windows and hold horizons shorter than the data's
