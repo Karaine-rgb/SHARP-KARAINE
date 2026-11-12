@@ -13,7 +13,7 @@ import logging
 import random
 from datetime import datetime, timedelta, timezone
 
-from app import db, ingest, signals, telegram
+from app import db, ingest
 from app.config import settings
 from app.pinnacle_client import ArcadiaAuthError, ArcadiaClient, ArcadiaError
 from app.settings_store import get_arcadia_api_key
@@ -145,14 +145,6 @@ class Poller:
                 return
 
             changed = await ingest.ingest_matchup_markets(matchup_id, raw_markets)
-            result = await signals.compute_and_store_score(matchup_id, row["start_time"])
-            await telegram.maybe_alert_tier_change(
-                matchup_id,
-                row["home_team"],
-                row["away_team"],
-                result["tier"],
-                _summarize(result),
-            )
 
             state.error_streak = 0
             if changed:
@@ -166,9 +158,6 @@ class Poller:
                     "type": "match_update",
                     "matchup_id": matchup_id,
                     "changed": bool(changed),
-                    "tier": result["tier"],
-                    "sharp_side": result["sharp_side"],
-                    "total_score": result["total_score"],
                 }
             )
         except ArcadiaAuthError as exc:
@@ -185,15 +174,6 @@ class Poller:
             logger.exception("Unexpected error polling matchup %s", matchup_id)
             state.error_streak += 1
             state.next_due = now + timedelta(seconds=settings.poll_max_interval)
-
-
-def _summarize(result: dict) -> str:
-    parts = [f"score={result['total_score']:.1f}"]
-    if result.get("ah", {}).get("direction"):
-        parts.append(f"AH shift {result['ah']['shift']:+.2f} -> {result['ah']['direction']}")
-    if result.get("x2", {}).get("direction"):
-        parts.append(f"1X2 displacement {result['x2']['magnitude']:.2f}pp -> {result['x2']['direction']}")
-    return ", ".join(parts)
 
 
 poller = Poller(storage_guard=default_guard)

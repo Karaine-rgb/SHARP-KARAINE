@@ -1,9 +1,10 @@
 # Sharp Karaine — Megajackpot Sharp Money Tracker
 
 Tracks Pinnacle's Arcadia guest API (1X2 + Asian Handicap odds and limits)
-for the matches that make up a SportPesa Megajackpot round, classifies
-price movement into sharp-money signals, scores each match, and
-serves a live dashboard + Telegram alerts.
+for the matches that make up a SportPesa Megajackpot round, stores every
+price snapshot, and serves a live dashboard that shows how each match has
+moved: which sides have had a steam move (ranked by size), the opening-line
+favorite, and charts of the raw series.
 
 ## Before you trust any of this
 
@@ -19,24 +20,21 @@ serves a live dashboard + Telegram alerts.
   checked from the environment that built it (no network egress). Once you
   add a match to monitoring and it polls for real, report back any field
   name or shape mismatch in `app/ingest.py`'s normalization.
-- **The exact scoring numbers are this build's own calibration, not
-  empirical.** The *qualitative* thresholds (0.25/0.5/1.0 AH points,
-  0.30/0.80/1.80pp 1X2 displacement) are from your
-  spec. (Limit movement was part of the original spec and has been removed
-  from the tool: it showed no predictive value.) How each threshold maps to a 0-10 score is a reasonable bridge
-  this implementation invented to satisfy the tier cutoffs you gave
-  (Strong Sharp 7-10, Sharp 4.5-6.9, Watch 2-4.4, No Signal 0-1.9) — it is
-  not backed by real outcome data, because none exists yet. Every one of
-  these numbers lives in `CONFIG` at the top of `app/signals.py` so you
-  can retune them once you've watched a few rounds, without touching the
-  logic. This is also why the dashboard's raw-data charts exist: don't
-  take the tier badge on faith, look at the underlying series yourself.
-- **No backtesting is built in.** There's no historical tick/limit data
-  available anywhere to backtest against. Instead, every raw snapshot and
-  every computed score is persisted permanently (`market_snapshots`,
-  `match_scores`, `signals` are insert-only, nothing is pruned) so that
-  after a few Megajackpot rounds you have a real dataset to check
-  tier-vs-outcome accuracy and retune `CONFIG` against actual results.
+- **The tier / score engine has been removed.** The original build scored
+  each match 0-10 into tiers (Strong Sharp, Sharp, Watch, No Signal) and sent
+  Telegram alerts on tier changes; backtesting showed it did not predict
+  results (see `RESEARCH_FINDINGS.md`), so it, the limit-movement signal and
+  the Telegram tier alerts are gone. The dashboard now lists, per match, each
+  side that has had a **steam move** at any moment, ranked by the size of its
+  biggest steam swing. Steam is a shape label from `velocity_shape()`, and it
+  is still unproven as a predictor - treat it as a description of what the
+  market did, not a pick. The remaining thresholds live in `CONFIG` at the
+  top of `app/signals.py`.
+- **No backtesting is built in**, but every raw snapshot is persisted
+  (`market_snapshots` is insert-only) and the CSV export carries them with
+  the final scores, so you can check anything you like against real results.
+  The movement readings are computed on demand from those snapshots, so
+  nothing derived is stored.
 
 ## Setup
 
@@ -49,7 +47,8 @@ serves a live dashboard + Telegram alerts.
    401ing, grab a fresh one from your browser's network tab on
    pinnacle.com and either set the env var or update it from the
    dashboard's Settings panel (which takes effect immediately, no
-   redeploy). Telegram is optional; alerts are silently skipped if unset.
+   redeploy). The Telegram fields are currently unused (tier alerts were
+   removed).
 3. **Install.**
    ```
    pip install -r requirements.txt
@@ -78,12 +77,8 @@ serves a live dashboard + Telegram alerts.
    populate as snapshots accumulate — this is the one place you can
    verify the tool is reading real data correctly independent of the
    scoring logic.
-4. Set a Telegram bot token + chat id in Settings and use **Force Poll**
-   on a match with enough movement to hit at least "Watch" tier, or
-   temporarily lower `CONFIG["tier_watch"]` in `app/signals.py` to force a
-   test alert through.
-5. Run `pytest` — this covers the odds math, de-vig, ingest normalization,
-   and signal scoring logic without needing network or a database.
+4. Run `pytest` — this covers the odds math, de-vig, ingest normalization,
+   and the movement readings without needing network or a database.
 
 ## Architecture
 
@@ -91,16 +86,15 @@ serves a live dashboard + Telegram alerts.
 Pinnacle Arcadia API
         |  (poller, adaptive interval)
         v
- fetcher -> devig -> signal engine -> scorer -> Postgres (Supabase)
-        |                                            |
-        +----------------- WebSocket broadcast ------+
-                                                      v
-                                    FastAPI REST + static frontend
-                                                      |
-                                                      v
-                                    Telegram alert on tier change
+ fetcher -> devig -> Postgres (Supabase)
+        |                 |
+        +-- WebSocket ----+
+                          v
+              FastAPI REST + static frontend
+              (movement readings computed on demand)
 ```
 
-See `app/signals.py` for the signal/scoring implementation and
+See `app/signals.py` for the movement readings (steam moves, move shapes,
+favorite) and
 `app/ingest.py` for how raw Arcadia payloads are normalized and
 version-diffed before being persisted.

@@ -55,6 +55,9 @@ create index if not exists idx_snapshots_matchup_market
 create index if not exists idx_snapshots_matchup_key_version
     on market_snapshots (matchup_id, market_key, captured_at desc);
 
+-- signals, match_scores and alerts_sent are no longer written (the tier/score
+-- engine was removed; movement readings are computed on demand). The tables and
+-- their old rows stay so existing data is untouched.
 create table if not exists signals (
     id            bigserial primary key,
     matchup_id    bigint not null references matchups(id) on delete cascade,

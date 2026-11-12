@@ -5,10 +5,9 @@ import pytest
 from app.signals import (
     CONFIG,
     ah_line_shift,
-    classify_tier,
-    compute_match_score,
-    data_sufficiency,
-    detect_contested,
+    ah_view,
+    steam_moves,
+    x2_transitions,
     favorite_strength,
     velocity_shape,
     move_spans,
@@ -343,127 +342,6 @@ def test_velocity_shape_no_label_with_fewer_than_two_snapshots():
 
 
 # ---------------------------------------------------------------------------
-# contested detection
-# ---------------------------------------------------------------------------
-
-def test_detect_contested_true_on_direction_flip():
-    series = [
-        ml_point(60, 0.40, 0.30, 0.30),
-        ml_point(50, 0.44, 0.28, 0.28),  # early: home backed
-        ml_point(10, 0.44, 0.28, 0.28),
-        ml_point(1, 0.38, 0.30, 0.32),  # late: away backed
-    ]
-    assert detect_contested(series, KICKOFF) is True
-
-
-def test_detect_contested_false_when_consistent():
-    series = [
-        ml_point(60, 0.40, 0.30, 0.30),
-        ml_point(50, 0.44, 0.28, 0.28),
-        ml_point(10, 0.46, 0.27, 0.27),
-        ml_point(1, 0.48, 0.26, 0.26),
-    ]
-    assert detect_contested(series, KICKOFF) is False
-
-
-def test_detect_contested_false_without_enough_history_each_side():
-    series = [ml_point(50, 0.44, 0.28, 0.28), ml_point(1, 0.38, 0.30, 0.32)]
-    assert detect_contested(series, KICKOFF) is False
-
-
-# ---------------------------------------------------------------------------
-# tiers
-# ---------------------------------------------------------------------------
-
-def test_classify_tier_boundaries():
-    assert classify_tier(0.0) == "no_signal"
-    assert classify_tier(1.9) == "no_signal"
-    assert classify_tier(2.0) == "watch"
-    assert classify_tier(4.5) == "sharp"
-    assert classify_tier(7.0) == "strong_sharp"
-    assert classify_tier(999) == "strong_sharp"  # capped at 10 before classifying
-
-
-# ---------------------------------------------------------------------------
-# data sufficiency
-# ---------------------------------------------------------------------------
-
-def test_data_sufficiency_false_when_too_new():
-    now = KICKOFF - timedelta(hours=47.5)
-    series = [ml_point(48, 0.4, 0.3, 0.3), ml_point(47.6, 0.4, 0.3, 0.3)]
-    assert data_sufficiency(series, [], now) is False
-
-
-def test_data_sufficiency_true_with_enough_age_and_points():
-    now = KICKOFF - timedelta(hours=10)
-    series = [ml_point(48, 0.4, 0.3, 0.3), ml_point(10, 0.4, 0.3, 0.3)]
-    assert data_sufficiency(series, [], now) is True
-
-
-# ---------------------------------------------------------------------------
-# end-to-end scoring scenarios
-# ---------------------------------------------------------------------------
-
-def test_compute_match_score_insufficient_data():
-    result = compute_match_score([ml_point(0.1, 0.4, 0.3, 0.3)], [], KICKOFF, now=KICKOFF - timedelta(hours=71.9))
-    assert result["tier"] == "insufficient_data"
-
-
-def test_compute_match_score_strong_sharp_when_ah_and_x2_agree():
-    ml = [
-        ml_point(48, 0.40, 0.30, 0.30, limit=2500.0),
-        ml_point(1, 0.46, 0.28, 0.26, limit=1000.0),  # home backed
-    ]
-    sp = [
-        sp_point(48, -0.25, limit=5000.0),
-        sp_point(1, -1.5, limit=2000.0),  # syndicate-level AH shift, home backed
-    ]
-    result = compute_match_score(ml, sp, KICKOFF, now=KICKOFF - timedelta(hours=0.5))
-    assert result["tier"] == "strong_sharp"
-    assert result["sharp_side"] == "home"
-    assert "limit_bonus" not in result and "convergence_bonus" not in result
-
-
-def test_compute_match_score_quiet_market_is_no_signal():
-    ml = [ml_point(48, 0.40, 0.30, 0.30), ml_point(1, 0.401, 0.2995, 0.2995)]
-    sp = [sp_point(48, -0.5), sp_point(1, -0.5)]
-    result = compute_match_score(ml, sp, KICKOFF, now=KICKOFF - timedelta(hours=0.5))
-    assert result["tier"] == "no_signal"
-    assert result["sharp_side"] is None
-
-
-def test_compute_match_score_flat_line_uses_probability_fallback():
-    """A flat AH line used to always score 0 for ah_score, even if real
-    positioning was happening at that fixed number the whole time - the
-    exact blind spot found by backtesting 2 real MJP rounds (see the
-    comment above ah_prob in compute_match_score)."""
-    ml = [ml_point(48, 0.40, 0.30, 0.30), ml_point(1, 0.401, 0.2995, 0.2995)]  # 1X2 quiet
-    sp = [sp_point(48, -0.5, limit=5000.0), sp_point(1, -0.5, limit=5000.0)]  # line never moves
-    sp[0]["fair_home_prob"], sp[0]["fair_away_prob"] = 0.55, 0.45
-    sp[1]["fair_home_prob"], sp[1]["fair_away_prob"] = 0.58, 0.42  # +3pp home, well past strong
-
-    result = compute_match_score(ml, sp, KICKOFF, now=KICKOFF - timedelta(hours=0.5))
-    assert result["ah"]["direction"] is None  # the line itself never moved
-    assert result["ah"]["prob_fallback_used"] is True
-    assert result["ah_score"] == CONFIG["x2_score_strong"]
-    assert result["sharp_side"] == "home"
-    assert result["tier"] == "strong_sharp"
-
-
-def test_limit_changes_do_not_affect_the_score():
-    """Limit movement was removed from scoring: a collapsing limit scores the same as a steady one."""
-    sp_steady = [sp_point(48, -0.25, limit=5000.0), sp_point(1, -1.5, limit=5000.0)]
-    sp_dropped = [sp_point(48, -0.25, limit=5000.0), sp_point(1, -1.5, limit=500.0)]
-    ml_steady = [ml_point(48, 0.40, 0.30, 0.30, limit=2500.0), ml_point(1, 0.42, 0.29, 0.29, limit=2500.0)]
-    ml_dropped = [ml_point(48, 0.40, 0.30, 0.30, limit=2500.0), ml_point(1, 0.42, 0.29, 0.29, limit=200.0)]
-    now = KICKOFF - timedelta(hours=0.5)
-    a = compute_match_score(ml_steady, sp_steady, KICKOFF, now=now)
-    b = compute_match_score(ml_dropped, sp_dropped, KICKOFF, now=now)
-    assert a["total_score"] == b["total_score"] and a["tier"] == b["tier"]
-    assert a["total_score"] == pytest.approx(1.4 * a["ah_score"] + a["x2_score"])
-
-
-# ---------------------------------------------------------------------------
 # move_spans (colouring of the 1X2 probability chart)
 # ---------------------------------------------------------------------------
 
@@ -523,3 +401,76 @@ def test_velocity_shape_can_be_forced_onto_a_side():
     series = [ml_point(48, 0.40, 0.30, 0.30), ml_point(5, 0.40, 0.30, 0.30), ml_point(0.5, 0.46, 0.28, 0.26)]
     assert velocity_shape(series)["side"] == "home"
     assert velocity_shape(series, side="draw")["side"] == "draw"
+
+
+# ---------------------------------------------------------------------------
+# steam_moves (the ranked list that replaced the tier labels)
+# ---------------------------------------------------------------------------
+
+def test_steam_moves_lists_each_side_with_a_steam_move_ranked_by_size():
+    series = [
+        ml_point(48, 0.40, 0.30, 0.30),
+        ml_point(5, 0.40, 0.30, 0.30),
+        ml_point(2, 0.43, 0.33, 0.24),
+        ml_point(0.5, 0.46, 0.40, 0.14),  # home +6pp, draw +10pp, both inside the last 3 hours
+    ]
+    moves = steam_moves(series)
+    assert [m["side"] for m in moves] == ["draw", "home"]
+    assert moves[0]["magnitude_pp"] > moves[1]["magnitude_pp"]
+    assert moves[0]["magnitude_pp"] == pytest.approx(10.0)
+    assert moves[1]["magnitude_pp"] == pytest.approx(6.0)
+    assert moves[0]["count"] == 1 and moves[0]["to"] == t(0.5)
+
+
+def test_steam_moves_ignores_moves_that_were_not_steam():
+    series = [
+        ml_point(48, 0.40, 0.30, 0.30),
+        ml_point(40, 0.46, 0.28, 0.26),  # the move happened days ago: drift, not steam
+        ml_point(0.5, 0.46, 0.28, 0.26),
+    ]
+    assert steam_moves(series) == []
+
+
+def test_steam_moves_empty_for_a_quiet_market():
+    series = [ml_point(48, 0.400, 0.30, 0.300), ml_point(20, 0.401, 0.30, 0.299), ml_point(1, 0.400, 0.30, 0.300)]
+    assert steam_moves(series) == []
+
+
+def test_steam_moves_counts_repeated_steam_on_a_side_and_reports_the_biggest():
+    series = [
+        ml_point(48, 0.40, 0.30, 0.30),
+        ml_point(30, 0.40, 0.30, 0.30),
+        ml_point(29, 0.44, 0.29, 0.27),   # fast +4pp
+        ml_point(20, 0.44, 0.29, 0.27),
+        ml_point(19, 0.40, 0.31, 0.29),
+        ml_point(5, 0.40, 0.31, 0.29),
+        ml_point(4, 0.43, 0.30, 0.27),
+        ml_point(2.5, 0.50, 0.26, 0.24),  # fast +10pp from 0.40
+    ]
+    moves = [m for m in steam_moves(series) if m["side"] == "home"]
+    assert len(moves) == 1 and moves[0]["count"] >= 1
+    assert moves[0]["magnitude_pp"] >= 4.0
+
+
+def test_x2_transitions_records_each_change_of_the_leading_side():
+    series = [
+        ml_point(48, 0.40, 0.30, 0.30),
+        ml_point(40, 0.46, 0.28, 0.26),   # home ahead
+        ml_point(30, 0.46, 0.28, 0.26),
+        ml_point(20, 0.40, 0.26, 0.34),   # now away ahead
+    ]
+    labels = [t_["label"] for t_ in x2_transitions(series)]
+    assert labels[0] is None or labels[0] == "home"
+    assert "home" in labels and labels[-1] == "away"
+    assert x2_transitions([ml_point(1, 0.4, 0.3, 0.3)]) == []
+
+
+def test_ah_view_adds_the_flat_line_fallback_fields():
+    sp = [sp_point(48, -0.5), sp_point(1, -0.5)]
+    sp[0]["fair_home_prob"], sp[0]["fair_away_prob"] = 0.55, 0.45
+    sp[1]["fair_home_prob"], sp[1]["fair_away_prob"] = 0.58, 0.42
+    view = ah_view(sp)
+    assert view["prob_fallback_used"] is True
+    assert view["prob_fallback"]["direction"] == "home"
+    moved = ah_view([sp_point(48, -0.25), sp_point(1, -1.5)])
+    assert moved["prob_fallback_used"] is False

@@ -246,18 +246,29 @@ function tickCountdowns() {
 let lastSummarySig = null;
 let summaryTimer = null;
 
+const STEAM_COLOR = "#ff2fa0";
+const SIDE_LABEL = { home: "Home", draw: "Draw", away: "Away" };
+
+// Sides that have had a steam move, biggest first (server-ranked), as chips.
+function steamChips(moves) {
+  if (!moves || !moves.length) return `<span class="dim">—</span>`;
+  return moves
+    .map(
+      (m) =>
+        `<span class="steam-chip" title="Biggest steam move on ${SIDE_LABEL[m.side]}${m.count > 1 ? ` (${m.count} steam moves)` : ""}"><span class="steam-dot"></span>${SIDE_LABEL[m.side]} <strong>+${m.magnitude_pp.toFixed(2)}pp</strong></span>`
+    )
+    .join("");
+}
+
 function summaryCells(r) {
   const ah = r.ah_detail || {};
   const x2 = r.x2_detail || {};
-  const tier = r.tier || "insufficient_data";
   return [
     new Date(r.start_time).toLocaleString(),
     null, // countdown cell is updated by tickCountdowns()
     `${escapeHtml(r.home_team)} vs ${escapeHtml(r.away_team)}`,
     escapeHtml(r.league_name || ""),
-    `<span class="tier-badge tier-${tier}">${tier.replace("_", " ")}</span>`,
-    r.sharp_side || "—",
-    fmtNum(r.total_score, 1),
+    steamChips(r.steam_moves),
     fmtPp(x2.home_pp !== undefined ? (Math.abs(x2.home_pp) >= Math.abs(x2.away_pp) ? x2.home_pp : x2.away_pp) : null),
     ah.opening !== undefined && ah.opening !== null ? `${fmtNum(ah.opening)} → ${fmtNum(ah.current)}` : "—",
     ah.magnitude !== undefined ? fmtNum(ah.shift, 2) : "—",
@@ -308,7 +319,7 @@ function patchSummaryRow(tr, r) {
 function renderSummary(rows) {
   const body = document.getElementById("summary-body");
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="11" class="dim">No matches in this round yet — use Discovery to add the Megajackpot fixtures.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="9" class="dim">No matches in this round yet — use Discovery to add the Megajackpot fixtures.</td></tr>`;
     return;
   }
   const existing = Array.from(body.querySelectorAll("tr[data-id]"));
@@ -813,30 +824,30 @@ function setLegend(elId, entries) {
 }
 
 function renderCards(detail) {
-  const s = detail.latest_score;
   const sig = detail.latest_signals || {};
   const cardsEl = document.getElementById("dd-cards");
-  if (!s) {
-    cardsEl.innerHTML = `<div class="card"><h4>Status</h4><div class="value">Insufficient data</div></div>`;
-    return;
-  }
   const ah = sig.ah_line_shift?.detail_json || {};
   const x2 = sig.x2_displacement?.detail_json || {};
   const fav = sig.favorite_strength?.detail_json || {};
   const favTeamName = fav.favorite === "home" ? detail.matchup.home_team
     : fav.favorite === "away" ? detail.matchup.away_team : null;
   const x2HistoryDropdown = renderHistoryDropdown(detail.x2_transitions);
+  const fmtWhen = (iso) => new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const teamFor = { home: detail.matchup.home_team, draw: "Draw", away: detail.matchup.away_team };
+  const steam = detail.steam_moves || [];
+  const steamRows = steam.length
+    ? `<ol class="steam-list">${steam
+        .map(
+          (m) =>
+            `<li><span class="steam-dot"></span><strong>${escapeHtml(teamFor[m.side])}</strong> <span class="steam-mag">+${m.magnitude_pp.toFixed(2)}pp</span><span class="sub"> ${fmtWhen(m.from)} → ${fmtWhen(m.to)}${m.count > 1 ? ` · ${m.count} steam moves` : ""}</span></li>`
+        )
+        .join("")}</ol>`
+    : `<div class="value dim">No steam move yet</div><div class="sub">A steam move is a fast swing of 0.8pp or more on a 1X2 line, seen in the 1X2 chart below.</div>`;
 
   cardsEl.innerHTML = `
-    <div class="card">
-      <h4>Tier</h4>
-      <div class="value"><span class="tier-badge tier-${s.tier}">${s.tier.replace("_", " ")}</span></div>
-      <div class="sub">total score ${fmtNum(s.total_score, 2)} (AH ${fmtNum(s.ah_score)} × 1.4 + 1X2 ${fmtNum(s.x2_score)})</div>
-    </div>
-    <div class="card">
-      <h4>Sharp side</h4>
-      <div class="value">${s.sharp_side || "—"}</div>
-      <div class="sub">${s.contested ? "Contested: early vs late-window direction disagree" : ""}</div>
+    <div class="card card-wide card-steam">
+      <h4>Steam moves <span class="pill-experimental">ranked by size</span></h4>
+      ${steamRows}
     </div>
     <div class="card card-experimental">
       <h4>Favorite <span class="pill-experimental">${fav.lead_change ? "hard rule: flipped" : "early read"}</span></h4>
@@ -1144,11 +1155,6 @@ function renderCharts(detail) {
     { color: COLOR_HOME, label: "Over (de-vigged %)" },
     { color: COLOR_AWAY, label: "Under (de-vigged %)" },
   ]);
-
-  const c8 = makeChart("chart-score");
-  const s8 = lineOn(c8, toSeriesData(detail.score_history, "total_score", "computed_at"), COLOR_HOME);
-  s8.setMarkers(cutoffMarkers(detail.score_history, "total_score", cutoffs, numFmt, "computed_at"));
-  setLegend("legend-score", [{ color: COLOR_HOME, label: "Composite score (0–10)" }]);
 
   marginDetail = detail;
   renderMarginCharts();

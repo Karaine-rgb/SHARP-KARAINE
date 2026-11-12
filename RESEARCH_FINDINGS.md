@@ -748,7 +748,15 @@ limit-change columns in the match list, its score bonus, the convergence
 bonus that depended on it, and the stored `limit_movement` signal - has been
 removed from the tool. The raw limit amounts are still collected, charted in
 the raw data study, and exported, because the margin formulas in section 14
-use them. Scores are now 1.4 * AH + 1X2 only; the tier cutoffs are unchanged.
+use them.
+
+**Note (tool change):** the whole tier / score engine - tier labels, the
+0-10 score, sharp side, contested flag, the score chart, Telegram tier alerts
+and the stored `signals` / `match_scores` rows - has been removed. The match
+list and the match panel now show, per match, each side that has had a steam
+move at any moment, ranked by the size of its biggest steam swing (steam is
+the `velocity_shape()` label, applied per swing as described below). The AH
+line and 1X2 displacement readings are computed on demand from the snapshots.
 
 **Note (tool change):** the "Move shape" card has been replaced by colouring
 on the 1X2 fair-probability chart. Each swing of 0.8pp or more on a line is

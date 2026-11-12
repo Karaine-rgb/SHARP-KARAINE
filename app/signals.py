@@ -1,47 +1,31 @@
-"""Sharp-money signal detection and scoring.
+"""Market-movement readings used by the dashboard.
 
-Implements the signals and scoring model specified by the user from their
-prior build (limit movement was part of it originally and has since been
-removed from the tool entirely - it never showed any predictive value):
+The tier / score engine (strong sharp, sharp, watch, no signal, with its
+scoring and Telegram tier alerts) has been removed: it never showed any
+predictive value. What remains is pure functions of a match's stored
+snapshots, computed on demand:
 
-  1. AH line shift        - points delta on the main Asian Handicap line
-  2. 1X2 fair-prob move   - cumulative pp change in de-vigged 1X2 probs
-                            from the true opening line
-  3. AH fair-prob move    - same idea on the AH market (confirmation)
+  - ah_line_shift / x2_displacement - how far the AH line and the 1X2 fair
+    probabilities have moved from the opening line (shown as cards)
+  - favorite_strength              - who the opening line says is the favorite
+  - velocity_shape / move_spans    - the shape of each move on a 1X2 line
+  - steam_moves                    - which sides have had a steam move, ranked
 
-IMPORTANT - calibration disclaimer: the *qualitative* thresholds below
-(0.25/0.5/1.0 points, 0.30/0.80/1.80pp) come directly
-from the user's spec. The *numeric score values* each threshold maps to
-(e.g. "a 1.0pt AH shift = 5.0 score") are this implementation's own
-calibration bridging those qualitative thresholds into the 0-10 scoring
-model - they are not empirically derived from real data (none exists yet
-for this tool). All of them live in the CONFIG dict below so they can be
-retuned once real rounds of data come in, without touching the logic.
+The thresholds in CONFIG come from the original spec or from backtests noted
+beside them; none has been shown to predict results.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 CONFIG = {
     "ah_shift_syndicate": 1.0,
     "ah_shift_sharp": 0.5,
     "ah_shift_threshold": 0.25,  # below this, not attributed as a signal at all
-    "ah_score_syndicate": 5.0,
-    "ah_score_sharp": 3.5,
-    "ah_score_threshold": 2.0,
     "x2_strong_pp": 1.80,
     "x2_meaningful_pp": 0.80,
     "x2_noise_floor_pp": 0.30,
-    "x2_score_strong": 5.0,
-    "x2_score_meaningful": 3.0,
-    "x2_score_noise_floor": 1.5,
-    "tier_strong_sharp": 7.0,
-    "tier_sharp": 4.5,
-    "tier_watch": 2.0,
-    "early_late_split_hours": 24,  # boundary between "early week" and "late window"
-    "min_snapshots_for_signal": 2,
-    "min_age_hours_for_signal": 2.0,
     # velocity_shape() only - kept separate from x2_noise_floor_pp on
     # purpose so tuning the real scored threshold never silently changes
     # this still-unproven, watch-only signal too.
@@ -71,23 +55,6 @@ CONFIG = {
     "confirming_move_meaningful_pp": 1.0,
     "confirming_move_strong_pp": 4.0,
 }
-
-# Rejected: per-league / liquidity-aware thresholds (scaling ah_shift_
-# threshold and x2_noise_floor_pp down for thin markets, on the theory
-# that a casual bettor can swing a low-limit market by accident, so a
-# bigger relative move should be required there to count as a real
-# signal). Backtested against 2 real MJP rounds by bucketing matches into
-# thin/mid/thick liquidity tiers (opening moneyline limit <$1,000 /
-# $1,000-3,000 / >=$3,000): thin markets showed LOWER average 1X2
-# displacement (1.90pp) and reached sharp/strong_sharp far less often
-# (25%) than mid/thick markets (69-100%) - despite being tracked for MORE
-# hours on average (92.7h vs 65.2h), which rules out "shorter observation
-# window" as the explanation. The theory predicted thin markets would
-# show MORE apparent (noisy) movement, needing a stricter bar; the data
-# shows the opposite - thin leagues are simply quieter overall, most
-# likely because sharp money concentrates on bigger leagues rather than
-# bothering with niche ones. Not implemented.
-
 
 def _first_last(series: list[dict], field: str) -> tuple[Any, Any]:
     valid = [s for s in series if s.get(field) is not None and s.get("status") != "suspended"]
@@ -564,218 +531,63 @@ def move_spans(moneyline_series: list[dict], min_move_pp: float | None = None) -
     return spans
 
 
-def detect_contested(
-    moneyline_series: list[dict], kickoff: datetime, split_hours: float = CONFIG["early_late_split_hours"]
-) -> bool:
-    """A match is 'contested' when early-week and late-window sharp
-    direction disagree (per the user's spec: sharps moved one way, then
-    reversed) - each window needs enough of its own history for the
-    comparison to mean anything, not just a single crossing snapshot.
-    """
-    cutoff = kickoff - timedelta(hours=split_hours)
-    early = [s for s in moneyline_series if s.get("captured_at") and s["captured_at"] <= cutoff]
-    late = [s for s in moneyline_series if s.get("captured_at") and s["captured_at"] > cutoff]
-    if len(early) < 2 or len(late) < 2:
-        return False
-    early_disp = x2_displacement(early)
-    late_disp = x2_displacement(late)
-    if early_disp["direction"] is None or late_disp["direction"] is None:
-        return False
-    return early_disp["direction"] != late_disp["direction"]
-
-
-def _score_ah(magnitude: float) -> float:
-    c = CONFIG
-    if magnitude >= c["ah_shift_syndicate"]:
-        return c["ah_score_syndicate"]
-    if magnitude >= c["ah_shift_sharp"]:
-        return c["ah_score_sharp"]
-    if magnitude >= c["ah_shift_threshold"]:
-        return c["ah_score_threshold"]
-    return 0.0
-
-
-def _score_x2(magnitude_pp: float) -> float:
-    c = CONFIG
-    if magnitude_pp >= c["x2_strong_pp"]:
-        return c["x2_score_strong"]
-    if magnitude_pp >= c["x2_meaningful_pp"]:
-        return c["x2_score_meaningful"]
-    if magnitude_pp >= c["x2_noise_floor_pp"]:
-        return c["x2_score_noise_floor"]
-    return 0.0
-
-
-def classify_tier(total_score: float) -> str:
-    capped = min(total_score, 10.0)
-    c = CONFIG
-    if capped >= c["tier_strong_sharp"]:
-        return "strong_sharp"
-    if capped >= c["tier_sharp"]:
-        return "sharp"
-    if capped >= c["tier_watch"]:
-        return "watch"
-    return "no_signal"
-
-
-def data_sufficiency(moneyline_series: list[dict], spread_series: list[dict], now: datetime) -> bool:
-    c = CONFIG
-    for series in (moneyline_series, spread_series):
-        if len(series) >= c["min_snapshots_for_signal"] and series[0].get("captured_at"):
-            age_hours = (now - series[0]["captured_at"]).total_seconds() / 3600.0
-            if age_hours >= c["min_age_hours_for_signal"]:
-                return True
-    return False
-
-
-def compute_match_score(
-    moneyline_series: list[dict],
-    spread_series: list[dict],
-    kickoff: datetime,
-    now: datetime | None = None,
-) -> dict:
-    """Top-level pure scoring entry point. Both series must be chronological
-    (oldest first) and pre-filtered to the *main* line for each market type
-    (see ingest.select_main_line).
-    """
-    now = now or datetime.now(timezone.utc)
-
-    if not data_sufficiency(moneyline_series, spread_series, now):
-        return {
-            "tier": "insufficient_data",
-            "sharp_side": None,
-            "contested": False,
-            "ah": ah_line_shift(spread_series),
-            "x2": x2_displacement(moneyline_series),
-            "favorite_strength": favorite_strength(spread_series, moneyline_series),
-            "ah_score": 0.0,
-            "x2_score": 0.0,
-            "total_score": 0.0,
-        }
-
+def ah_view(spread_series: list[dict]) -> dict:
+    """The AH line card: ah_line_shift() plus, when the line itself has not
+    moved, the move in the price at that line (the flat-line fallback - a
+    harder or easier line mechanically moves the covering probability, so the
+    probability read only substitutes in when the line is unchanged)."""
     ah = ah_line_shift(spread_series)
-    x2 = x2_displacement(moneyline_series)
-
-    # Backtested against 2 real MJP rounds: every nonzero AH shift observed
-    # was exactly the same 0.25 points, yet the matching probability move on
-    # that same market ranged from 0.47pp to 9.73pp - raw points hide a real
-    # ~20x spread in how much the move actually meant. The safe fix is NOT
-    # to swap points for probability everywhere: once the line has actually
-    # stepped, the probability read is contaminated by the target changing
-    # underneath it (a harder/easier line mechanically moves the covering
-    # probability - see the "Reading the Tape" manual's chart 5 callout).
-    # So the probability-based read only ever substitutes in when the line
-    # itself hasn't moved - the case the tool currently scores as a flat
-    # zero even if real positioning was happening at that fixed line the
-    # whole time. x2_displacement() is reused as-is (rather than a new
-    # function) since it already degrades gracefully on a two-way market:
-    # fair_draw_prob is always None for spread rows, so the draw slot just
-    # stays 0.0. Its pp thresholds are reused too, for lack of any real
-    # calibration data yet for this specific flat-line case - same
-    # provisional-until-backtested status as every other number here.
-    ah_prob = x2_displacement(spread_series)
-    if ah["magnitude"] >= CONFIG["ah_shift_threshold"]:
-        ah_score = _score_ah(ah["magnitude"])
-        ah_effective_direction = ah["direction"]
-    else:
-        ah_score = _score_x2(ah_prob["magnitude"])
-        ah_effective_direction = ah_prob["direction"]
-
-    x2_score = _score_x2(x2["magnitude"])
-    total = 1.4 * ah_score + 1.0 * x2_score
-    contested = detect_contested(moneyline_series, kickoff)
-
-    # Sharp side priority: AH shift first (sharps move AH first per the
-    # spec), then largest 1X2 displacement. ah_effective_direction falls
-    # back to the flat-line probability read (see above) when the line
-    # itself hasn't moved, so early positioning at an unchanged number
-    # still gets to set the side instead of falling through to 1X2.
-    if ah_effective_direction:
-        sharp_side = ah_effective_direction
-    elif x2["direction"]:
-        sharp_side = x2["direction"]
-    else:
-        sharp_side = None
-
     ah["prob_fallback_used"] = ah["magnitude"] < CONFIG["ah_shift_threshold"]
-    ah["prob_fallback"] = ah_prob
-
-    return {
-        "tier": classify_tier(total) if not contested else "contested",
-        "sharp_side": "contested" if contested else sharp_side,
-        "contested": contested,
-        "ah": ah,
-        "x2": x2,
-        "favorite_strength": favorite_strength(spread_series, moneyline_series),
-        "ah_score": ah_score,
-        "x2_score": x2_score,
-        "total_score": total,
-    }
+    ah["prob_fallback"] = x2_displacement(spread_series)
+    return ah
 
 
-# ---------------------------------------------------------------------------
-# DB-touching orchestration below.
-# ---------------------------------------------------------------------------
+def steam_moves(moneyline_series: list[dict]) -> list[dict]:
+    """Every side that has had a steam move at any moment, ranked by the size
+    of its biggest steam move (largest first).
 
-from app import db  # noqa: E402
+    Built from move_spans(): a steam move is one swing of at least
+    CONFIG["move_span_min_pp"] on a side's fair probability that
+    velocity_shape() reads as steam when it stopped. Per side this returns the
+    biggest such swing (magnitude_pp, from, to) and how many steam moves the
+    side has had. Sides without a steam move are not listed.
+    """
+    best: dict[str, dict] = {}
+    for span in move_spans(moneyline_series):
+        if span["label"] != "steam":
+            continue
+        entry = best.setdefault(
+            span["side"],
+            {"side": span["side"], "magnitude_pp": 0.0, "count": 0, "from": None, "to": None},
+        )
+        entry["count"] += 1
+        if abs(span["change_pp"]) > entry["magnitude_pp"]:
+            entry["magnitude_pp"] = abs(span["change_pp"])
+            entry["from"], entry["to"] = span["from"], span["to"]
+    return sorted(best.values(), key=lambda e: e["magnitude_pp"], reverse=True)
 
 
-async def fetch_series(matchup_id: int, market_type: str, period: int = 0, is_alternate: bool = False) -> list[dict]:
-    rows = await db.fetch(
-        """
-        select captured_at, home_price, draw_price, away_price, home_points,
-               limit_amount, fair_home_prob, fair_draw_prob, fair_away_prob, status
-        from market_snapshots
-        where matchup_id = $1 and market_type = $2 and period = $3 and is_alternate = $4
-        order by captured_at asc
-        """,
-        matchup_id,
-        market_type,
-        period,
-        is_alternate,
-    )
-    return [dict(r) for r in rows]
-
-
-async def compute_and_store_score(matchup_id: int, kickoff: datetime) -> dict:
-    moneyline_series = await fetch_series(matchup_id, "moneyline")
-    spread_series = await fetch_series(matchup_id, "spread")
-    result = compute_match_score(moneyline_series, spread_series, kickoff)
-
-    await db.execute(
-        """
-        insert into match_scores (
-            matchup_id, ah_score, x2_score, limit_bonus, convergence_bonus,
-            total_score, tier, sharp_side, contested
-        ) values ($1,$2,$3,0.0,0.0,$4,$5,$6,$7)
-        """,
-        matchup_id,
-        result["ah_score"],
-        result["x2_score"],
-        result["total_score"],
-        result["tier"],
-        result["sharp_side"],
-        result["contested"],
-    )
-    await db.execute(
-        """
-        insert into signals (matchup_id, signal_type, direction, magnitude, detail_json)
-        values ($1,'ah_line_shift',$2,$3,$4::jsonb),
-               ($1,'x2_displacement',$5,$6,$7::jsonb),
-               ($1,'favorite_strength',$8,$9,$10::jsonb)
-        """,
-        matchup_id,
-        result["ah"]["direction"],
-        result["ah"]["magnitude"],
-        db.to_jsonb(result["ah"]),
-        result["x2"]["direction"],
-        result["x2"]["magnitude"],
-        db.to_jsonb(result["x2"]),
-        # direction = the favorite side (home/away/None - pick'em), magnitude
-        # = the 1X2 probability backing that read, fixed at the opening and
-        # never re-derived, unlike every other signal here.
-        result["favorite_strength"]["favorite"],
-        result["favorite_strength"]["favorite_prob"] or 0.0,
-        db.to_jsonb(result["favorite_strength"]),
-    )
-    return result
+def x2_transitions(moneyline_series: list[dict], max_evaluations: int = 400) -> list[dict]:
+    """History of which side the 1X2 displacement read favoured, replayed over
+    the series: one entry each time that reading changed (for the History
+    dropdown on the 1X2 displacement card). Long series are sampled."""
+    valid = [
+        s for s in moneyline_series
+        if s.get("fair_home_prob") is not None and s.get("fair_draw_prob") is not None
+        and s.get("fair_away_prob") is not None and s.get("status") != "suspended"
+    ]
+    n = len(valid)
+    if n < 2:
+        return []
+    step = max(1, n // max_evaluations)
+    indices = list(range(2, n + 1, step))
+    if indices and indices[-1] != n:
+        indices.append(n)
+    out: list[dict] = []
+    last = object()
+    for k in indices:
+        label = x2_displacement(valid[:k])["direction"]
+        if label != last:
+            out.append({"at": valid[k - 1]["captured_at"], "label": label, "side": None, "change_pp": None})
+            last = label
+    return out

@@ -86,15 +86,6 @@ async def test_tick_still_polls_a_match_before_kickoff(monkeypatch):
 
     monkeypatch.setattr("app.poller.ingest.ingest_matchup_markets", fake_ingest)
 
-    async def fake_compute_and_store_score(matchup_id, kickoff):
-        return {"tier": "insufficient_data", "sharp_side": None, "total_score": 0.0}
-
-    monkeypatch.setattr("app.poller.signals.compute_and_store_score", fake_compute_and_store_score)
-
-    async def fake_maybe_alert(*a, **kw):
-        pass
-
-    monkeypatch.setattr("app.poller.telegram.maybe_alert_tier_change", fake_maybe_alert)
 
     p = Poller()
     p._client = EmptyClient()
@@ -166,15 +157,6 @@ async def test_poll_one_does_not_unmonitor_empty_markets_before_kickoff(monkeypa
 
     monkeypatch.setattr("app.poller.ingest.ingest_matchup_markets", fake_ingest)
 
-    async def fake_compute_and_store_score(matchup_id, kickoff):
-        return {"tier": "insufficient_data", "sharp_side": None, "total_score": 0.0}
-
-    monkeypatch.setattr("app.poller.signals.compute_and_store_score", fake_compute_and_store_score)
-
-    async def fake_maybe_alert(*a, **kw):
-        pass
-
-    monkeypatch.setattr("app.poller.telegram.maybe_alert_tier_change", fake_maybe_alert)
 
     p = Poller()
     p._client = EmptyClient()

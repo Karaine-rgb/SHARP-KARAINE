@@ -16,7 +16,7 @@ from app.pinnacle_client import ArcadiaClient, ArcadiaError
 from app.poller import poller
 from app.storage_guard import guard
 from app.settings_store import get_all_settings_masked, get_arcadia_api_key, set_setting
-from app.signals import favorite_strength, move_spans
+from app.signals import ah_view, favorite_strength, move_spans, steam_moves, x2_displacement, x2_transitions
 from app.ws import manager
 
 router = APIRouter(prefix="/api")
@@ -554,34 +554,37 @@ async def matches_summary(round_label: str | None = None):
         f"""
         select
             m.id, m.pinnacle_matchup_id, m.home_team, m.away_team, m.league_name,
-            m.start_time, m.mjp_round_label, m.is_monitored, m.home_score, m.away_score,
-            s.tier, s.sharp_side, s.contested, s.total_score, s.ah_score, s.x2_score,
-            s.computed_at as score_computed_at,
-            ah.detail_json as ah_detail,
-            x2.detail_json as x2_detail
+            m.start_time, m.mjp_round_label, m.is_monitored, m.home_score, m.away_score
         from matchups m
-        left join lateral (
-            select * from match_scores ms where ms.matchup_id = m.id
-            order by computed_at desc limit 1
-        ) s on true
-        left join lateral (
-            select detail_json from signals sg where sg.matchup_id = m.id
-            and sg.signal_type = 'ah_line_shift' order by computed_at desc limit 1
-        ) ah on true
-        left join lateral (
-            select detail_json from signals sg where sg.matchup_id = m.id
-            and sg.signal_type = 'x2_displacement' order by computed_at desc limit 1
-        ) x2 on true
         where {condition}
         order by m.start_time asc
         """,
         *params,
     )
+    # The movement readings are pure functions of each match's main-line
+    # snapshots, so derive them here instead of reading stored signal rows.
+    snapshots = await db.fetch(
+        """
+        select matchup_id, market_type, captured_at, status, home_points,
+               fair_home_prob, fair_draw_prob, fair_away_prob
+        from market_snapshots
+        where matchup_id = any($1::bigint[]) and period = 0 and is_alternate = false
+          and market_type in ('moneyline', 'spread')
+        order by matchup_id, captured_at
+        """,
+        [r["id"] for r in rows],
+    )
+    by_match: dict[int, dict[str, list[dict]]] = {}
+    for snap in snapshots:
+        d = dict(snap)
+        by_match.setdefault(d["matchup_id"], {"moneyline": [], "spread": []})[d["market_type"]].append(d)
     result = []
     for r in rows:
         d = dict(r)
-        d["ah_detail"] = db.from_jsonb(d["ah_detail"])
-        d["x2_detail"] = db.from_jsonb(d["x2_detail"])
+        series = by_match.get(d["id"], {"moneyline": [], "spread": []})
+        d["ah_detail"] = ah_view(series["spread"])
+        d["x2_detail"] = x2_displacement(series["moneyline"])
+        d["steam_moves"] = steam_moves(series["moneyline"])
         result.append(d)
     return result
 
@@ -626,63 +629,8 @@ async def match_detail(matchup_id: int):
         "sunday": (cutoff_row["earliest_sunday"] - timedelta(minutes=10)) if cutoff_row["earliest_sunday"] else None,
     }
 
-    latest_score = await db.fetchrow(
-        "select * from match_scores where matchup_id = $1 order by computed_at desc limit 1",
-        matchup_id,
-    )
-    score_history = await db.fetch(
-        "select computed_at, total_score, tier, sharp_side from match_scores "
-        "where matchup_id = $1 order by computed_at asc",
-        matchup_id,
-    )
-    latest_signals = await db.fetch(
-        """
-        select distinct on (signal_type) signal_type, direction, magnitude, detail_json, computed_at
-        from signals where matchup_id = $1 and signal_type <> 'limit_movement'
-        order by signal_type, computed_at desc
-        """,
-        matchup_id,
-    )
-
-    # Full history of every x2_displacement check ever run
-    # for this match - a fresh row is inserted every poll cycle, so "was
-    # home ever leading" is already sitting in the data even after the
-    # label has since moved on to something else.
-    # Compressed to only the moments the label actually changed, not every
-    # single poll that repeated it.
-    async def _label_transitions(signal_type: str) -> list[dict]:
-        rows = await db.fetch(
-            """
-            select computed_at, direction as label, detail_json from signals
-            where matchup_id = $1 and signal_type = $2
-            order by computed_at asc
-            """,
-            matchup_id,
-            signal_type,
-        )
-        transitions = []
-        last_label = None
-        for r in rows:
-            if r["label"] != last_label:
-                detail = db.from_jsonb(r["detail_json"]) or {}
-                # velocity_shape's detail carries "side" and "total_change_pp";
-                # x2_displacement has neither (its label already IS the side) -
-                # both are safely None/absent there, the frontend only shows
-                # what's present.
-                transitions.append({
-                    "at": r["computed_at"],
-                    "label": r["label"],
-                    "side": detail.get("side"),
-                    "change_pp": detail.get("total_change_pp"),
-                })
-                last_label = r["label"]
-        return transitions
-
-    x2_transitions = await _label_transitions("x2_displacement")
-
     # Full raw time-series for independent analysis, grouped by market so the
-    # frontend can render one chart per series regardless of what the signal
-    # engine concluded. Main lines (period 0, non-alternate) drive the
+    # frontend can render one chart per series. Main lines (period 0, non-alternate) drive the
     # primary charts; everything else (alternates, first-half) is still
     # returned for the raw table since it was collected too.
     all_snapshots = await db.fetch(
@@ -705,28 +653,23 @@ async def match_detail(matchup_id: int):
         if not d["is_alternate"] and d["period"] == 0:
             series.get(d["market_type"], series["other"]).append(d)
 
-    signals_by_type = {}
-    for r in latest_signals:
-        d = dict(r)
-        d["detail_json"] = db.from_jsonb(d["detail_json"])
-        signals_by_type[r["signal_type"]] = d
-
-    # favorite_strength is a pure function of the main-line snapshots, so
-    # derive it fresh here instead of trusting the stored row: matches
-    # scored before the feature existed (or before a later refinement) have
-    # no row or a stale-schema one, and would otherwise read as "pick'em".
-    signals_by_type["favorite_strength"] = {
-        "signal_type": "favorite_strength",
-        "detail_json": favorite_strength(series["spread"], series["moneyline"]),
+    # Every reading below is a pure function of the main-line snapshots, so it
+    # is derived fresh here (and therefore also works for old matches).
+    signals_by_type = {
+        "ah_line_shift": {"signal_type": "ah_line_shift", "detail_json": ah_view(series["spread"])},
+        "x2_displacement": {"signal_type": "x2_displacement", "detail_json": x2_displacement(series["moneyline"])},
+        "favorite_strength": {
+            "signal_type": "favorite_strength",
+            "detail_json": favorite_strength(series["spread"], series["moneyline"]),
+        },
     }
 
     return {
         "matchup": dict(matchup),
-        "latest_score": dict(latest_score) if latest_score else None,
-        "score_history": [dict(r) for r in score_history],
         "latest_signals": signals_by_type,
+        "steam_moves": steam_moves(series["moneyline"]),
         "move_spans": move_spans(series["moneyline"]),
-        "x2_transitions": x2_transitions,
+        "x2_transitions": x2_transitions(series["moneyline"]),
         "betslip_cutoffs": betslip_cutoffs,
         "series": {
             "moneyline_main": series["moneyline"],
