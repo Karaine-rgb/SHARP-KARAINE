@@ -16,6 +16,7 @@ from app.pinnacle_client import ArcadiaClient, ArcadiaError
 from app.poller import poller
 from app.storage_guard import guard
 from app.settings_store import get_all_settings_masked, get_arcadia_api_key, set_setting
+from app.scorecard import read_match, result_side, tally
 from app.signals import ah_view, favorite_strength, move_spans, steam_moves, x2_displacement, x2_transitions
 from app.ws import manager
 
@@ -536,6 +537,64 @@ async def export_match_snapshots_csv(round_label: str | None = None):
     )
 
 
+async def _main_line_series(ids: list[int]) -> dict[int, dict[str, list[dict]]]:
+    """Full-game main-line 1X2 and AH snapshots per match, oldest first."""
+    snapshots = await db.fetch(
+        """
+        select matchup_id, market_type, captured_at, status, home_points,
+               fair_home_prob, fair_draw_prob, fair_away_prob
+        from market_snapshots
+        where matchup_id = any($1::bigint[]) and period = 0 and is_alternate = false
+          and market_type in ('moneyline', 'spread')
+        order by matchup_id, captured_at
+        """,
+        ids,
+    )
+    by_match: dict[int, dict[str, list[dict]]] = {}
+    for snap in snapshots:
+        d = dict(snap)
+        by_match.setdefault(d["matchup_id"], {"moneyline": [], "spread": []})[d["market_type"]].append(d)
+    return by_match
+
+
+@router.get("/matches/scorecard")
+async def matches_scorecard():
+    """Per round (most recent first, plus a total): how many matches with a final
+    score the engine's favourite, the steam signal and the two together got
+    right. Only matches whose score has been entered are counted. See
+    app/scorecard.py for the exact definitions."""
+    settled = await db.fetch(
+        """
+        select id, coalesce(mjp_round_label, '(unlabeled)') as round_label, start_time, home_score, away_score
+        from matchups
+        where home_score is not null and away_score is not null
+          and mjp_round_label is distinct from $1
+        """,
+        round_delete.DELETING_LABEL,
+    )
+    totals = await db.fetch(
+        """
+        select coalesce(mjp_round_label, '(unlabeled)') as round_label, count(*) as matches, min(start_time) as earliest
+        from matchups where mjp_round_label is distinct from $1
+        group by coalesce(mjp_round_label, '(unlabeled)')
+        order by min(start_time) desc
+        """,
+        round_delete.DELETING_LABEL,
+    )
+    series = await _main_line_series([r["id"] for r in settled])
+    per_round: dict[str, list[dict]] = {}
+    for r in settled:
+        s = series.get(r["id"], {"moneyline": [], "spread": []})
+        reading = read_match(s["spread"], s["moneyline"])
+        reading["result"] = result_side(r["home_score"], r["away_score"])
+        per_round.setdefault(r["round_label"], []).append(reading)
+    rounds = [
+        {"round_label": t["round_label"], "matches": t["matches"], **tally(per_round.get(t["round_label"], []))}
+        for t in totals
+    ]
+    return {"rounds": rounds, "total": tally([m for ms in per_round.values() for m in ms])}
+
+
 @router.get("/matches/summary")
 async def matches_summary(round_label: str | None = None):
     """Without round_label: the actively-monitored (live) matches, same
@@ -563,21 +622,7 @@ async def matches_summary(round_label: str | None = None):
     )
     # The movement readings are pure functions of each match's main-line
     # snapshots, so derive them here instead of reading stored signal rows.
-    snapshots = await db.fetch(
-        """
-        select matchup_id, market_type, captured_at, status, home_points,
-               fair_home_prob, fair_draw_prob, fair_away_prob
-        from market_snapshots
-        where matchup_id = any($1::bigint[]) and period = 0 and is_alternate = false
-          and market_type in ('moneyline', 'spread')
-        order by matchup_id, captured_at
-        """,
-        [r["id"] for r in rows],
-    )
-    by_match: dict[int, dict[str, list[dict]]] = {}
-    for snap in snapshots:
-        d = dict(snap)
-        by_match.setdefault(d["matchup_id"], {"moneyline": [], "spread": []})[d["market_type"]].append(d)
+    by_match = await _main_line_series([r["id"] for r in rows])
     result = []
     for r in rows:
         d = dict(r)

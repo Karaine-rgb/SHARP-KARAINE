@@ -67,6 +67,7 @@ document.getElementById("btn-rename-round").onclick = async () => {
   });
   await loadRounds(newName.trim());
   loadSummary();
+  loadScorecard();
 };
 
 // ---------------------------------------------------------------------------
@@ -355,10 +356,103 @@ function renderSummary(rows) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Signal scorecard: how often the engine, the steam signal and both together were right
+// ---------------------------------------------------------------------------
+
+let scorecardData = null;
+let lastResultSig = null;
+let scMissLabel = null;
+let scHtml = { cells: null, table: null };
+
+function scPct(right, n) {
+  return n ? `${Math.round((100 * right) / n)}%` : "-";
+}
+
+function scFrac(right, n) {
+  return n ? `${right} / ${n} <span class="sc-pct">${scPct(right, n)}</span>` : `<span class="dim">no matches</span>`;
+}
+
+function renderScorecard() {
+  const cells = document.getElementById("sc-cells");
+  const noteEl = document.getElementById("sc-note");
+  const roundEl = document.getElementById("sc-round");
+  if (!scorecardData) {
+    cells.innerHTML = `<div class="sc-empty dim">Scorecard unavailable.</div>`;
+    return;
+  }
+  const r = scorecardData.rounds.find((x) => x.round_label === currentRound);
+  if (!r && currentRound && scMissLabel !== currentRound) {
+    scMissLabel = currentRound; // round renamed/created since the last fetch: refresh once
+    loadScorecard();
+  }
+  roundEl.textContent = r ? `${currentRound} — ${r.settled} of ${r.matches} results in` : "";
+  let cellsHtml;
+  if (!r || r.settled === 0) {
+    cellsHtml = `<div class="sc-empty dim">No results entered for this round yet. Enter the final scores in the table below and the tally appears here.</div>`;
+    noteEl.textContent = "";
+  } else {
+    const e = r.engine, st = r.steam, c = r.converged;
+    cellsHtml = `
+      <div class="sc-cell sc-engine">
+        <h4>Engine (favourite)</h4>
+        <div class="sc-value">${scFrac(e.right, e.picks)}</div>
+        <div class="sc-sub">${e.no_pick} pick'em with no favourite not counted</div>
+      </div>
+      <div class="sc-cell sc-steam">
+        <h4>Steam (any steaming side)</h4>
+        <div class="sc-value">${scFrac(st.right, st.flagged)}</div>
+        <div class="sc-sub">${st.avg_sides != null ? `covers ${st.avg_sides} of 3 sides on average, so blind picks of that many sides would get about ${st.chance_right} right` : ""}${st.no_steam ? ` · ${st.no_steam} with no steam` : ""}</div>
+      </div>
+      <div class="sc-cell sc-conv">
+        <h4>Steam + engine</h4>
+        <div class="sc-value">${scFrac(c.right, c.count)}</div>
+        <div class="sc-sub">engine's favourite also had steam</div>
+      </div>`;
+    noteEl.textContent =
+      "Engine and Steam + engine are right when the favourite won (a draw is a miss). Steam is right when the side that won was any of the steaming sides; move size is not used, so it covers several sides at once and is an easier test than a single pick.";
+  }
+  const row = (label, x, cls) =>
+    `<tr class="${cls || ""}"><td>${escapeHtml(label)}</td>` +
+    `<td>${x.settled}${x.matches != null ? ` / ${x.matches}` : ""}</td>` +
+    `<td>${x.engine.picks ? `${x.engine.right} / ${x.engine.picks} (${scPct(x.engine.right, x.engine.picks)})` : "-"}</td>` +
+    `<td>${x.steam.flagged ? `${x.steam.right} / ${x.steam.flagged} (${scPct(x.steam.right, x.steam.flagged)})` : "-"}</td>` +
+    `<td>${x.converged.count ? `${x.converged.right} / ${x.converged.count} (${scPct(x.converged.right, x.converged.count)})` : "-"}</td></tr>`;
+  if (scHtml.cells !== cellsHtml) {
+    cells.innerHTML = cellsHtml;
+    scHtml.cells = cellsHtml;
+  }
+  const tableHtml =
+    scorecardData.rounds.map((x) => row(x.round_label, x, x.round_label === currentRound ? "sc-current" : "")).join("") +
+    row("All rounds", { ...scorecardData.total, matches: null }, "sc-total");
+  if (scHtml.table !== tableHtml) {
+    document.getElementById("sc-body").innerHTML = tableHtml;
+    scHtml.table = tableHtml;
+  }
+}
+
+async function loadScorecard() {
+  try {
+    const data = await api("/matches/scorecard");
+    scorecardData = data && Array.isArray(data.rounds) && data.total ? data : null;
+  } catch (err) {
+    scorecardData = null;
+    return;
+  }
+  renderScorecard();
+}
+
 async function loadSummary(force = false) {
   const qs = currentRound ? `?round_label=${encodeURIComponent(currentRound)}` : "";
   const rows = await api(`/matches/summary${qs}`);
   const sig = `${currentRound}|${JSON.stringify(rows)}`;
+  const resultSig = rows.map((r) => `${r.id}:${r.home_score}:${r.away_score}`).join(",");
+  if (resultSig !== lastResultSig) {
+    lastResultSig = resultSig;
+    loadScorecard(); // only when a score or the match set changed, not on every price update
+  } else {
+    renderScorecard();
+  }
   if (!force && sig === lastSummarySig) return;
   lastSummarySig = sig;
   renderSummary(rows);
@@ -615,6 +709,7 @@ document.getElementById("storage-table-body").onclick = async (ev) => {
     }
     await loadRounds();
     await loadSummary();
+    loadScorecard();
     await loadDownloadRounds();
   } catch (e) {
     btn.disabled = false;

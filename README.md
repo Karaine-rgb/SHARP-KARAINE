@@ -30,6 +30,12 @@ favorite, and charts of the raw series.
   is still unproven as a predictor - treat it as a description of what the
   market did, not a pick. The remaining thresholds live in `CONFIG` at the
   top of `app/signals.py`.
+- **Signal scorecard.** Above the match table, per round (and for all rounds), the dashboard
+  counts how many matches with a final score the engine's favourite, the steam signal and the
+  two together got right (`app/scorecard.py`, `GET /api/matches/scorecard`). Steam counts as right
+  when the side that won was any of the steaming sides (size not used), so it also shows how
+  many sides it covers and what blind picks of that many sides would get. Computed on request
+  from the snapshots and the scores you enter; nothing is stored.
 - **No backtesting is built in**, but every raw snapshot is persisted
   (`market_snapshots` is insert-only) and the CSV export carries them with
   the final scores, so you can check anything you like against real results.

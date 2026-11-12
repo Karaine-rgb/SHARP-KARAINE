@@ -60,6 +60,25 @@
       <button id="btn-rename-round" class="btn btn-ghost">Rename round</button>
       <span id="round-status" class="pill pill-dim"></span>
     </div>
+    <section id="scorecard" class="scorecard" aria-label="Signal scorecard">
+      <div class="sc-head">
+        <h3>Signal scorecard</h3>
+        <span id="sc-round" class="sc-round"></span>
+      </div>
+      <div id="sc-cells" class="sc-cells"></div>
+      <p id="sc-note" class="sc-note"></p>
+      <details class="sc-all">
+        <summary>All rounds</summary>
+        <div class="sc-table-wrap">
+          <table id="sc-table">
+            <thead>
+              <tr><th>Round</th><th>Results in</th><th>Engine</th><th>Steam</th><th>Steam + engine</th></tr>
+            </thead>
+            <tbody id="sc-body"></tbody>
+          </table>
+        </div>
+      </details>
+    </section>
     <table id="summary-table">
       <thead>
         <tr>
