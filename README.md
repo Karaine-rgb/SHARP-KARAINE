@@ -26,7 +26,10 @@ favorite, and charts of the raw series.
   results (see `RESEARCH_FINDINGS.md`), so it, the limit-movement signal and
   the Telegram tier alerts are gone. The dashboard now lists, per match, each
   side that has had a **steam move** at any moment, ranked by the size of its
-  biggest steam swing. Steam is a shape label from `velocity_shape()`, and it
+  biggest steam swing. Each swing is labelled **early** (finished more than 3 hours before
+  kickoff) or **late** (within the last 3 hours; `late_steam_hours` in `CONFIG`), and each side
+  shows its biggest early and late swing so the ranked number can be traced to the swing it
+  came from. Steam is a shape label from `velocity_shape()`, and it
   is still unproven as a predictor - treat it as a description of what the
   market did, not a pick. The remaining thresholds live in `CONFIG` at the
   top of `app/signals.py`.
